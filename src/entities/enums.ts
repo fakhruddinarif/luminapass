@@ -17,91 +17,54 @@ export const eventStatusEnum = pgEnum("event_status", [
   "cancelled",
 ]);
 
-export const sectionStatusEnum = pgEnum("section_status", [
-  "active",
-  "inactive",
-]);
-export const seatStatusEnum = pgEnum("seat_status", [
-  "available",
-  "reserved",
-  "sold",
-  "blocked",
-  "disabled",
-]);
-
 export const orderStatusEnum = pgEnum("order_status", [
-  "pending_payment",
-  "awaiting_confirmation",
-  "paid",
-  "expired",
-  "cancelled",
-  "refunded",
-]);
-
-export const orderItemStatusEnum = pgEnum("order_item_status", [
+  "queued",
+  "processing",
   "reserved",
-  "sold",
-  "released",
+  "awaiting_payment",
+  "paid",
+  "failed",
+  "cancelled",
+  "expired",
 ]);
 
 export const paymentStatusEnum = pgEnum("payment_status", [
   "pending",
-  "processing",
-  "paid",
+  "authorized",
+  "captured",
   "failed",
   "expired",
   "refunded",
   "cancelled",
 ]);
 
-export const queueEntryStatusEnum = pgEnum("queue_entry_status", [
-  "waiting",
-  "allowed",
-  "entered",
-  "expired",
-  "rejected",
-  "cancelled",
-]);
-
-export const generationJobStatusEnum = pgEnum("generation_job_status", [
+export const queueStatusEnum = pgEnum("queue_status", [
   "queued",
-  "running",
+  "processing",
   "completed",
   "failed",
-  "cancelled",
+  "dead_letter",
 ]);
 
-export const streamStatusEnum = pgEnum("stream_status", [
-  "scheduled",
-  "ingesting",
-  "live",
-  "paused",
-  "ended",
-  "failed",
+export const stockMovementTypeEnum = pgEnum("stock_movement_type", [
+  "reserve",
+  "release",
+  "sale",
+  "refund",
+  "admin_add",
+  "admin_withdraw",
+  "sync_adjustment",
 ]);
 
-export const streamQualityEnum = pgEnum("stream_quality", [
+export const streamResolutionEnum = pgEnum("stream_resolution", [
   "1080p",
   "720p",
   "480p",
 ]);
 
-export const viewerSessionStatusEnum = pgEnum("viewer_session_status", [
-  "active",
-  "idle",
+export const streamSessionStatusEnum = pgEnum("stream_session_status", [
+  "started",
+  "playing",
+  "paused",
   "ended",
-  "kicked",
-]);
-
-export const logLevelEnum = pgEnum("log_level", [
-  "debug",
-  "info",
-  "warn",
-  "error",
-  "fatal",
-]);
-
-export const dashboardScopeEnum = pgEnum("dashboard_scope", [
-  "global",
-  "event",
 ]);

@@ -22,9 +22,6 @@ export const events = pgTable(
     venueName: varchar("venue_name", { length: 200 }).notNull(),
     venueCity: varchar("venue_city", { length: 120 }).notNull(),
     venueAddress: text("venue_address"),
-    timezone: varchar("timezone", { length: 80 })
-      .notNull()
-      .default("Asia/Jakarta"),
     startsAt: timestamp("starts_at", {
       withTimezone: true,
       mode: "date",

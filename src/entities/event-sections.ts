@@ -1,7 +1,7 @@
 import {
-  index,
   uniqueIndex,
   text,
+  numeric,
   timestamp,
   uuid,
   varchar,
@@ -9,7 +9,6 @@ import {
   pgTable,
 } from "drizzle-orm/pg-core";
 
-import { sectionStatusEnum } from "./enums";
 import { events } from "./events";
 
 export const eventSections = pgTable(
@@ -22,12 +21,8 @@ export const eventSections = pgTable(
     code: varchar("code", { length: 40 }).notNull(),
     name: varchar("name", { length: 120 }).notNull(),
     description: text("description"),
-    color: varchar("color", { length: 16 }),
-    priceCents: integer("price_cents").notNull(),
-    currency: varchar("currency", { length: 3 }).notNull().default("IDR"),
-    seatCapacity: integer("seat_capacity").notNull(),
-    sortOrder: integer("sort_order").notNull().default(0),
-    status: sectionStatusEnum("status").notNull().default("active"),
+    price: numeric("price", { precision: 10, scale: 2 }).notNull().default("0"),
+    capacity: integer("capacity").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .defaultNow(),
@@ -40,10 +35,5 @@ export const eventSections = pgTable(
       table.eventId,
       table.code,
     ),
-    eventSortIdx: index("event_sections_event_sort_idx").on(
-      table.eventId,
-      table.sortOrder,
-    ),
-    statusIdx: index("event_sections_status_idx").on(table.status),
   }),
 );

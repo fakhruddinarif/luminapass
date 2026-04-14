@@ -15,6 +15,27 @@
       "when": 1776135265220,
       "tag": "0001_spotty_magma",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776200000000,
+      "tag": "0002_audit_trails",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776154593609,
+      "tag": "0003_low_manta",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776207479365,
+      "tag": "0004_fresh_purifiers",
+      "breakpoints": true
     }
   ]
 }

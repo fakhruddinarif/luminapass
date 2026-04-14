@@ -1,0 +1,294 @@
+{
+  "info": {
+    "name": "LuminaPass API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Auth + Events API collection for LuminaPass."
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{registerEmail}}\",\n  \"username\": \"{{registerUsername}}\",\n  \"fullName\": \"{{registerFullName}}\",\n  \"password\": \"{{registerPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "register"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts = Date.now();",
+                  "pm.collectionVariables.set('registerEmail', `user${ts}@example.com`);",
+                  "pm.collectionVariables.set('registerUsername', `user${ts}`);",
+                  "pm.collectionVariables.set('registerFullName', `User ${ts}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const setCookieHeaders = pm.response.headers.all().filter(h => h.key.toLowerCase() === 'set-cookie').map(h => h.value);",
+                  "const csrfCookie = setCookieHeaders.find(v => v.startsWith('CSRF-TOKEN='));",
+                  "if (csrfCookie) {",
+                  "  const token = csrfCookie.split(';')[0].split('=')[1];",
+                  "  pm.collectionVariables.set('csrfToken', decodeURIComponent(token));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{loginEmail}}\",\n  \"password\": \"{{loginPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const setCookieHeaders = pm.response.headers.all().filter(h => h.key.toLowerCase() === 'set-cookie').map(h => h.value);",
+                  "const csrfCookie = setCookieHeaders.find(v => v.startsWith('CSRF-TOKEN='));",
+                  "if (csrfCookie) {",
+                  "  const token = csrfCookie.split(';')[0].split('=')[1];",
+                  "  pm.collectionVariables.set('csrfToken', decodeURIComponent(token));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Info",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/info",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "info"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "logout"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Events (Admin)",
+      "item": [
+        {
+          "name": "Create Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"konser-akbar-2026\",\n  \"name\": \"Konser Akbar 2026\",\n  \"description\": \"Grand concert event\",\n  \"venueName\": \"Main Stadium\",\n  \"venueCity\": \"Jakarta\",\n  \"venueAddress\": \"Sudirman Street\",\n  \"startsAt\": \"2026-10-10T19:00:00.000Z\",\n  \"endsAt\": \"2026-10-10T22:00:00.000Z\",\n  \"saleStartsAt\": \"2026-08-01T00:00:00.000Z\",\n  \"saleEndsAt\": \"2026-10-09T23:59:59.000Z\",\n  \"livestreamEnabled\": true,\n  \"sections\": [\n    {\n      \"code\": \"A\",\n      \"name\": \"Festival A\",\n      \"price\": 350000,\n      \"capacity\": 100\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.event && json.data.event.id) {",
+                  "  pm.collectionVariables.set('eventId', json.data.event.id);",
+                  "}",
+                  "if (json && json.data && json.data.sections && json.data.sections.length > 0 && json.data.sections[0].id) {",
+                  "  pm.collectionVariables.set('sectionId', json.data.sections[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Event",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Konser Akbar 2026 Updated\",\n  \"livestreamEnabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/events/{{eventId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events", "{{eventId}}"]
+            }
+          }
+        },
+        {
+          "name": "Stock Override",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"add\",\n  \"quantity\": 10,\n  \"reason\": \"Admin capacity adjustment\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/events/stock/override?eventId={{eventId}}&sectionId={{sectionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events", "stock", "override"],
+              "query": [
+                {
+                  "key": "eventId",
+                  "value": "{{eventId}}"
+                },
+                {
+                  "key": "sectionId",
+                  "value": "{{sectionId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Live Dashboard",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/live?eventId={{eventId}}&topResolutionLimit=3",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "dashboard", "live"],
+              "query": [
+                {
+                  "key": "eventId",
+                  "value": "{{eventId}}"
+                },
+                {
+                  "key": "topResolutionLimit",
+                  "value": "3"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "loginEmail",
+      "value": "admin@example.com"
+    },
+    {
+      "key": "loginPassword",
+      "value": "StrongPass123"
+    },
+    {
+      "key": "registerEmail",
+      "value": ""
+    },
+    {
+      "key": "registerUsername",
+      "value": ""
+    },
+    {
+      "key": "registerFullName",
+      "value": ""
+    },
+    {
+      "key": "registerPassword",
+      "value": "StrongPass123"
+    },
+    {
+      "key": "csrfToken",
+      "value": ""
+    },
+    {
+      "key": "eventId",
+      "value": ""
+    },
+    {
+      "key": "sectionId",
+      "value": ""
+    }
+  ]
+}

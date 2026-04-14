@@ -1,10 +1,12 @@
 {
   "name": "luminapass",
-  "module": "index.ts",
+  "module": "src/index.ts",
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun run index.ts",
+    "dev": "bun run src/index.ts",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
