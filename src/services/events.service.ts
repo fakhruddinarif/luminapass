@@ -46,6 +46,13 @@ function mapDatabaseError(error: unknown): never {
     );
   }
 
+  if (error instanceof DatabaseError && error.code === "23503") {
+    throw new EventsServiceError(
+      "DATABASE_ERROR",
+      "Related record was not found for this operation",
+    );
+  }
+
   throw new EventsServiceError("DATABASE_ERROR", "A database error occurred");
 }
 
@@ -56,8 +63,21 @@ export class EventsService implements EventsServiceContract {
     validateEventTimeRange(input);
 
     try {
+      // Check slug uniqueness and create event with sections in a transaction
+      const existingEvent = await this.repository.getEventBySlug(input.slug);
+      if (existingEvent) {
+        throw new EventsServiceError(
+          "EVENT_SLUG_EXISTS",
+          "Event slug already exists",
+        );
+      }
+
       return await this.repository.createEventWithSections(actorUserId, input);
     } catch (error) {
+      if (error instanceof EventsServiceError) {
+        throw error;
+      }
+
       mapDatabaseError(error);
     }
   }

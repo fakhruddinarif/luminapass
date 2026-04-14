@@ -9,7 +9,7 @@ import {
   disconnectRedis,
   env,
 } from "./config";
-import { requestLoggerMiddleware } from "./middlewares/request-logger.middleware";
+import { auditTrailAfterResponseHook } from "./middlewares/request-logger.middleware";
 import { authRoutes } from "./routes/auth.routes";
 import { eventsRoutes } from "./routes/events.routes";
 import { errorResponse } from "./utils/http-response";
@@ -114,7 +114,7 @@ export const app = new Elysia()
       secret: env.JWT_SECRET,
     }),
   )
-  .use(requestLoggerMiddleware)
+  .onAfterResponse(auditTrailAfterResponseHook)
   .onStart(async () => {
     await connectDatabase();
     await connectRedis();

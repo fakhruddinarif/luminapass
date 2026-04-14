@@ -25,6 +25,14 @@ function toNullableDate(date?: Date): Date | null {
 }
 
 export const eventsRepository: EventsRepositoryContract = {
+  async getEventBySlug(slug) {
+    const event = await db.query.events.findFirst({
+      where: eq(events.slug, slug),
+    });
+
+    return event ?? null;
+  },
+
   async createEventWithSections(actorUserId, input) {
     return db.transaction(async (tx) => {
       const [createdEvent] = await tx

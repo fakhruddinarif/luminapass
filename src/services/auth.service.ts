@@ -107,6 +107,7 @@ export class AuthService implements AuthServiceContract {
       passwordHash,
       phone: input.phone?.trim(),
       avatarUrl: input.avatarUrl,
+      role: input.role,
     });
 
     return toAuthenticatedUser(created);

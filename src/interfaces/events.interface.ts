@@ -19,6 +19,7 @@ export interface LiveDashboardMetrics {
 }
 
 export interface EventsRepositoryContract {
+  getEventBySlug(slug: string): Promise<unknown | null>;
   createEventWithSections(
     actorUserId: string,
     input: CreateEventBody,

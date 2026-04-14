@@ -1,9 +1,7 @@
-import { Elysia } from "elysia";
-
 import { parseRequestCookies } from "./auth.middleware";
 import { authCookieName, verifyAccessToken } from "../services/auth.service";
 import { createAuditTrail } from "../repositories/audit-trails.repository";
-import { logAudit } from "../utils/logger";
+import { logAudit, logError } from "../utils/logger";
 import type { JwtService } from "../interfaces/auth.interface";
 
 const auditableMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -61,8 +59,14 @@ async function resolveUserInfo(
   return `${payload.sub}:${payload.email}`;
 }
 
-export const requestLoggerMiddleware = new Elysia().onAfterHandle(
-  async (context) => {
+export async function auditTrailAfterResponseHook(context: {
+  request: Request;
+  set: { status?: number | string };
+  response?: unknown;
+  body?: unknown;
+  jwt?: JwtService;
+}) {
+  try {
     const method = context.request.method.toUpperCase();
     if (!auditableMethods.has(method)) {
       return;
@@ -70,15 +74,18 @@ export const requestLoggerMiddleware = new Elysia().onAfterHandle(
 
     const endpoint = new URL(context.request.url).pathname;
     const setStatus = context.set.status;
-    const status =
+    const parsedStatus =
       typeof setStatus === "number"
         ? setStatus
         : typeof setStatus === "string"
           ? Number(setStatus)
           : 200;
+    const status = Number.isFinite(parsedStatus) ? parsedStatus : 200;
 
-    const jwt = (context as unknown as { jwt: JwtService }).jwt;
-    const user = await resolveUserInfo(context.request, jwt);
+    const jwt = context.jwt;
+    const user = jwt
+      ? await resolveUserInfo(context.request, jwt)
+      : "anonymous";
 
     const payload = {
       endpoint,
@@ -86,7 +93,7 @@ export const requestLoggerMiddleware = new Elysia().onAfterHandle(
       ip: getIpAddress(context.request),
       user,
       method,
-      request: sanitizePayload((context as unknown as { body?: unknown }).body),
+      request: sanitizePayload(context.body),
       response: sanitizePayload(context.response),
       status,
     };
@@ -102,8 +109,18 @@ export const requestLoggerMiddleware = new Elysia().onAfterHandle(
         response: payload.response,
         status: payload.status,
       });
-    } catch {
+    } catch (error) {
+      logError("Failed to persist audit trail to database", {
+        message: error instanceof Error ? error.message : String(error),
+        endpoint: payload.endpoint,
+        method: payload.method,
+        status: payload.status,
+      });
       logAudit(payload);
     }
-  },
-);
+  } catch (error) {
+    logError("Audit middleware execution failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}

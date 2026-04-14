@@ -21,6 +21,7 @@ export const registerBodySchema = z.object({
     .regex(/[0-9]/, { message: "Password must include a number" }),
   phone: z.string().trim().min(8).max(32).optional(),
   avatarUrl: z.string().url().max(1024).optional(),
+  role: z.enum(["customer", "admin"]).default("customer"),
 });
 
 export const loginBodySchema = z.object({

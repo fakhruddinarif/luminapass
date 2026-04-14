@@ -34,6 +34,7 @@ describe("EventsService", () => {
     const repository = {
       createEventWithSections: async () => ({ ok: true }),
       updateEvent: async () => ({ ok: true }),
+      getEventBySlug: async () => null,
       overrideSectionCapacity: async () => ({ ok: true }),
       getLiveDashboard: async () => ({
         waitingUsers: 1,
@@ -57,6 +58,7 @@ describe("EventsService", () => {
     const repository = {
       createEventWithSections: async () => ({ ok: true }),
       updateEvent: async () => ({ ok: true }),
+      getEventBySlug: async () => null,
       overrideSectionCapacity: async () => ({ ok: true }),
       getLiveDashboard: async () => ({
         waitingUsers: 0,
@@ -83,6 +85,7 @@ describe("EventsService", () => {
     const repository = {
       createEventWithSections: async () => ({ ok: true }),
       updateEvent: async () => null,
+      getEventBySlug: async () => null,
       overrideSectionCapacity: async () => ({ ok: true }),
       getLiveDashboard: async () => ({
         waitingUsers: 0,
@@ -106,6 +109,7 @@ describe("EventsService", () => {
     const repository = {
       createEventWithSections: async () => ({ ok: true }),
       updateEvent: async () => ({ ok: true }),
+      getEventBySlug: async () => null,
       overrideSectionCapacity: async () => {
         throw new Error("NEGATIVE_CAPACITY");
       },
@@ -134,6 +138,7 @@ describe("EventsService", () => {
     const repository = {
       createEventWithSections: async () => ({ ok: true }),
       updateEvent: async () => ({ ok: true }),
+      getEventBySlug: async () => null,
       overrideSectionCapacity: async () => ({ ok: true }),
       getLiveDashboard: async () => ({
         waitingUsers: 10,
@@ -163,6 +168,7 @@ describe("EventsService", () => {
         throw new Error("random failure");
       },
       updateEvent: async () => ({ ok: true }),
+      getEventBySlug: async () => null,
       overrideSectionCapacity: async () => ({ ok: true }),
       getLiveDashboard: async () => ({
         waitingUsers: 0,

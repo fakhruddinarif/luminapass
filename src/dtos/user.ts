@@ -5,4 +5,5 @@ export interface CreateUserParams {
   passwordHash: string;
   phone?: string;
   avatarUrl?: string;
+  role: "customer" | "admin";
 }

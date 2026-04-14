@@ -63,6 +63,7 @@ describe("AuthService", () => {
         username: "userexample",
         fullName: "User Example",
         password: "StrongPass123",
+        role: "customer",
       }),
     ).rejects.toBeInstanceOf(AuthServiceError);
   });
