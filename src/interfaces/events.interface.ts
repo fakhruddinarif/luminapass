@@ -4,6 +4,21 @@ import type {
   StockOverrideBody,
   UpdateEventBody,
 } from "../dtos/admin";
+import type { eventSections, events, stockMovements } from "../entities";
+
+export type EventRow = typeof events.$inferSelect;
+export type EventSectionRow = typeof eventSections.$inferSelect;
+export type StockMovementRow = typeof stockMovements.$inferSelect;
+
+export interface EventWithSections {
+  event: EventRow;
+  sections: EventSectionRow[];
+}
+
+export interface StockOverrideResult {
+  section: EventSectionRow;
+  movement: StockMovementRow;
+}
 
 export interface TopResolutionMetric {
   resolution: "1080p" | "720p" | "480p";
@@ -19,38 +34,41 @@ export interface LiveDashboardMetrics {
 }
 
 export interface EventsRepositoryContract {
-  getEventBySlug(slug: string): Promise<unknown | null>;
+  getEventBySlug(slug: string): Promise<EventRow | null>;
   createEventWithSections(
     actorUserId: string,
     input: CreateEventBody,
-  ): Promise<unknown>;
+  ): Promise<EventWithSections>;
   updateEvent(
     eventId: string,
     actorUserId: string,
     input: UpdateEventBody,
-  ): Promise<unknown | null>;
+  ): Promise<EventRow | null>;
   overrideSectionCapacity(
     eventId: string,
     sectionId: string,
     actorUserId: string,
     input: StockOverrideBody,
-  ): Promise<unknown>;
+  ): Promise<StockOverrideResult | null>;
   getLiveDashboard(query: LiveDashboardQuery): Promise<LiveDashboardMetrics>;
 }
 
 export interface EventsServiceContract {
-  createEvent(actorUserId: string, input: CreateEventBody): Promise<unknown>;
+  createEvent(
+    actorUserId: string,
+    input: CreateEventBody,
+  ): Promise<EventWithSections>;
   updateEvent(
     eventId: string,
     actorUserId: string,
     input: UpdateEventBody,
-  ): Promise<unknown>;
+  ): Promise<EventRow>;
   instantStockOverride(
     eventId: string,
     sectionId: string,
     actorUserId: string,
     input: StockOverrideBody,
-  ): Promise<unknown>;
+  ): Promise<StockOverrideResult>;
   getLiveDashboard(query: LiveDashboardQuery): Promise<LiveDashboardMetrics>;
 }
 

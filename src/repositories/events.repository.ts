@@ -157,6 +157,10 @@ export const eventsRepository: EventsRepositoryContract = {
         .where(eq(eventSections.id, section.id))
         .returning();
 
+      if (!updatedSection) {
+        throw new Error("SECTION_UPDATE_FAILED");
+      }
+
       const [movement] = await tx
         .insert(stockMovements)
         .values({
@@ -169,6 +173,10 @@ export const eventsRepository: EventsRepositoryContract = {
           reason: input.reason,
         })
         .returning();
+
+      if (!movement) {
+        throw new Error("MOVEMENT_INSERT_FAILED");
+      }
 
       return {
         section: updatedSection,

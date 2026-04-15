@@ -2,9 +2,25 @@
   "info": {
     "name": "LuminaPass API",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Auth + Events API collection for LuminaPass."
+    "description": "Auth + Events API collection for LuminaPass, including OpenAPI schema endpoint."
   },
   "item": [
+    {
+      "name": "OpenAPI",
+      "item": [
+        {
+          "name": "Get OpenAPI Schema",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}{{openApiPath}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["openapi", "json"]
+            }
+          }
+        }
+      ]
+    },
     {
       "name": "Auth",
       "item": [
@@ -253,6 +269,10 @@
     {
       "key": "baseUrl",
       "value": "http://localhost:3000"
+    },
+    {
+      "key": "openApiPath",
+      "value": "/openapi/json"
     },
     {
       "key": "loginEmail",

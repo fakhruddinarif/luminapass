@@ -1,6 +1,6 @@
 # LuminaPass API
 
-LuminaPass is a Bun + Elysia + Drizzle ORM backend for authentication, authorization, event management, stock override, live analytics, and audit trail.
+LuminaPass is a Bun + Elysia + Drizzle ORM backend for authentication, authorization, event management, stock override, and live analytics.
 
 ## 1. Tech Stack
 
@@ -14,44 +14,20 @@ LuminaPass is a Bun + Elysia + Drizzle ORM backend for authentication, authoriza
 
 ## 2. Available Features
 
-- Authentication endpoints:
-  - POST /api/register
-  - POST /api/login
-  - GET /api/info
-  - DELETE /api/logout
-- Events management endpoints (admin role required):
-  - POST /api/events
-  - PUT /api/events/:eventId
-  - POST /api/events/stock/override?eventId=<eventId>&sectionId=<sectionId>
-  - GET /api/dashboard/live
-- Cookie-based token security:
-  - HttpOnly access token cookie
-  - CSRF token cookie for logout endpoint
-- Structured API response format:
-  - status
-  - message
-  - data
-  - errors
-  - meta
-- Audit trail for mutation methods:
-  - POST
-  - PUT
-  - PATCH
-  - DELETE
+- User authentication and authorization.
+- Cookie-based session security (HttpOnly token + CSRF protection).
+- Event management for admin users.
+- Event stock override workflow.
+- Live dashboard and streaming analytics.
+- Ticket order and payment transaction processing.
 
-## 3. API Response Format
+## 3. OpenAPI
 
-All endpoints follow this response format:
+OpenAPI endpoint is available for API schema access:
 
-```json
-{
-  "status": 200,
-  "message": "Success message",
-  "data": {},
-  "errors": null,
-  "meta": null
-}
-```
+- http://localhost:3000/openapi/json
+
+Use this schema for API documentation tools and client generation.
 
 ## 4. Environment Setup
 
@@ -144,23 +120,7 @@ bunx tsc --noEmit
 bunx tsc --noEmit; bun test
 ```
 
-## 10. Audit Trail
-
-Audit trail is stored in audit_trails table with fields:
-
-- endpoint
-- datetime
-- ip
-- user
-- method
-- request
-- response
-- status
-- created_at
-
-Sensitive data such as password or token is redacted before storing.
-
-## 11. Postman Collection
+## 10. Postman Collection
 
 Postman collection file is located at project root:
 
@@ -177,28 +137,7 @@ Default baseUrl:
 
 - http://localhost:3000
 
-### CSRF Notes
-
-- Logout request requires x-csrf-token header.
-- Collection script automatically extracts csrf token from Set-Cookie header after register/login.
-
-## 12. API Summary
-
-### Auth
-
-- POST /api/register
-- POST /api/login
-- GET /api/info
-- DELETE /api/logout
-
-### Events (Admin)
-
-- POST /api/events
-- PUT /api/events/:eventId
-- POST /api/events/stock/override?eventId=<eventId>&sectionId=<sectionId>
-- GET /api/dashboard/live
-
-## 13. Troubleshooting
+## 11. Troubleshooting
 
 ### DB connection failed
 
@@ -208,11 +147,3 @@ Default baseUrl:
 ### Redis authentication error
 
 - Make sure REDIS_PASSWORD in .env matches Redis container config.
-
-### Invalid token on logout
-
-- Ensure x-csrf-token header matches CSRF-TOKEN cookie value.
-
-### audit_trails table missing
-
-- Run bun run db:push after schema updates.

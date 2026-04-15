@@ -45,13 +45,13 @@ describe("EventsService", () => {
       }),
     };
 
-    const service = new EventsService(repository);
+    const service = new EventsService(repository as any);
     const result = await service.createEvent(
       actorUserId,
       buildCreateEventInput(),
     );
 
-    expect(result).toEqual({ ok: true });
+    expect((result as any).ok).toBe(true);
   });
 
   it("throws INVALID_TIME_RANGE when event ends before start", async () => {
@@ -69,7 +69,7 @@ describe("EventsService", () => {
       }),
     };
 
-    const service = new EventsService(repository);
+    const service = new EventsService(repository as any);
 
     const input = buildCreateEventInput();
     input.endsAt = new Date("2026-10-10T18:00:00.000Z");
@@ -96,7 +96,7 @@ describe("EventsService", () => {
       }),
     };
 
-    const service = new EventsService(repository);
+    const service = new EventsService(repository as any);
 
     await expect(
       service.updateEvent("00000000-0000-0000-0000-000000000001", actorUserId, {
@@ -122,7 +122,7 @@ describe("EventsService", () => {
       }),
     };
 
-    const service = new EventsService(repository);
+    const service = new EventsService(repository as any);
 
     await expect(
       service.instantStockOverride(
@@ -152,7 +152,7 @@ describe("EventsService", () => {
       }),
     };
 
-    const service = new EventsService(repository);
+    const service = new EventsService(repository as any);
     const result = await service.getLiveDashboard({
       eventId: "00000000-0000-0000-0000-000000000001",
       topResolutionLimit: 2,
@@ -179,7 +179,7 @@ describe("EventsService", () => {
       }),
     };
 
-    const service = new EventsService(repository);
+    const service = new EventsService(repository as any);
 
     await expect(
       service.createEvent(actorUserId, buildCreateEventInput()),

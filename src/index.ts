@@ -1,5 +1,6 @@
 import { cors } from "@elysiajs/cors";
 import { jwt } from "@elysiajs/jwt";
+import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
 
 import {
@@ -9,11 +10,21 @@ import {
   disconnectRedis,
   env,
 } from "./config";
+import {
+  closeRabbitMQRuntime,
+  initRabbitMQRuntime,
+} from "./config/rabbitmq-runtime";
 import { auditTrailAfterResponseHook } from "./middlewares/request-logger.middleware";
 import { authRoutes } from "./routes/auth.routes";
 import { eventsRoutes } from "./routes/events.routes";
+import { paymentTransactionsRoutes } from "./routes/payment-transactions.routes";
+import { ticketOrdersRoutes } from "./routes/ticket-orders.routes";
 import { errorResponse } from "./utils/http-response";
 import { logError, logInfo } from "./utils/logger";
+import {
+  startOrderExpiryWorker,
+  stopOrderExpiryWorker,
+} from "./workers/order-expiry.worker";
 
 interface ErrorIssue {
   code: string;
@@ -114,13 +125,35 @@ export const app = new Elysia()
       secret: env.JWT_SECRET,
     }),
   )
+  .use(
+    swagger({
+      path: "/openapi",
+      documentation: {
+        info: {
+          title: "LuminaPass API",
+          version: "1.0.0",
+          description: "OpenAPI schema for LuminaPass backend services",
+        },
+      },
+    }),
+  )
   .onAfterResponse(auditTrailAfterResponseHook)
   .onStart(async () => {
     await connectDatabase();
     await connectRedis();
+    try {
+      await initRabbitMQRuntime();
+    } catch (error) {
+      logError("RabbitMQ runtime initialization failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    startOrderExpiryWorker();
     logInfo(`Starting ${env.APP_NAME} in ${env.APP_ENV} mode`);
   })
   .onStop(async () => {
+    stopOrderExpiryWorker();
+    await closeRabbitMQRuntime();
     await disconnectRedis();
     await disconnectDatabase();
   })
@@ -167,7 +200,9 @@ export const app = new Elysia()
   })
   .get("/health", () => ({ status: "ok" }))
   .use(authRoutes)
-  .use(eventsRoutes);
+  .use(eventsRoutes)
+  .use(ticketOrdersRoutes)
+  .use(paymentTransactionsRoutes);
 
 app.listen(env.APP_PORT);
 
