@@ -38,21 +38,21 @@ export async function publishAppEvent(
   payload: Record<string, unknown>,
 ): Promise<void> {
   if (!channelRef) {
-    return;
+    throw new Error("RABBITMQ_CHANNEL_NOT_READY");
   }
 
   try {
     const published = await publishJson(channelRef, routingKey, payload);
 
     if (!published) {
-      logError("RabbitMQ publish returned false", {
-        routingKey,
-      });
+      throw new Error("RABBITMQ_PUBLISH_BACKPRESSURE");
     }
   } catch (error) {
     logError("Failed to publish RabbitMQ event", {
       routingKey,
       message: error instanceof Error ? error.message : String(error),
     });
+
+    throw error;
   }
 }

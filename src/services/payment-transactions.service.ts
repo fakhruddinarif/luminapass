@@ -1,6 +1,5 @@
 import { DatabaseError } from "pg";
 
-import { publishAppEvent } from "../config/rabbitmq-runtime";
 import type {
   CreatePaymentTransactionBody,
   PaymentWebhookBody,
@@ -50,16 +49,7 @@ export class PaymentTransactionsService implements PaymentTransactionsServiceCon
     input: CreatePaymentTransactionBody,
   ): Promise<PaymentTransactionAggregate> {
     try {
-      const result = await this.repository.createPaymentTransaction(input);
-
-      await publishAppEvent("payment.transaction.created", {
-        orderId: result.order.id,
-        paymentId: result.transaction.id,
-        status: result.transaction.status,
-        provider: result.transaction.provider,
-      });
-
-      return result;
+      return await this.repository.createPaymentTransaction(input);
     } catch (error) {
       mapPaymentDatabaseError(error);
     }
@@ -76,14 +66,6 @@ export class PaymentTransactionsService implements PaymentTransactionsServiceCon
           "Matching transaction for webhook payload was not found",
         );
       }
-
-      await publishAppEvent("payment.webhook.processed", {
-        orderId: result.order.id,
-        paymentId: result.transaction.id,
-        status: result.transaction.status,
-        provider: result.transaction.provider,
-        webhookEventId: result.transaction.webhookEventId,
-      });
 
       return result;
     } catch (error) {

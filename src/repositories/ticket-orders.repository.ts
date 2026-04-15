@@ -13,6 +13,7 @@ import type {
   TicketOrderAggregate,
   TicketOrdersRepositoryContract,
 } from "../interfaces/ticket-orders.interface";
+import { enqueueOutboxEventTx } from "./outbox.repository";
 
 function makeOrderCode(): string {
   const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -141,6 +142,20 @@ export const ticketOrdersRepository: TicketOrdersRepositoryContract = {
           reason: "Ticket reserved while order is awaiting payment",
         });
       }
+
+      await enqueueOutboxEventTx(tx, {
+        aggregateType: "ticket_order",
+        aggregateId: createdOrder.id,
+        eventType: "order.created",
+        routingKey: "order.created",
+        payload: {
+          orderId: createdOrder.id,
+          orderCode: createdOrder.orderCode,
+          eventId: createdOrder.eventId,
+          userId: createdOrder.userId,
+          status: createdOrder.status,
+        },
+      });
 
       return {
         order: createdOrder,

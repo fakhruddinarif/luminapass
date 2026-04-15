@@ -7,6 +7,7 @@
     "dev": "bun run src/index.ts",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
+    "loadtest:10k": "k6 run tests/load/k6-10k-concurrency.js",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"

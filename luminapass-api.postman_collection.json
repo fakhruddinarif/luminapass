@@ -22,6 +22,42 @@
       ]
     },
     {
+      "name": "Monitoring",
+      "item": [
+        {
+          "name": "Worker Metrics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/metrics/workers",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics", "workers"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('data.outbox.publishSuccessRate exists', function () {",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data).to.have.property('outbox');",
+                  "  pm.expect(json.data.outbox).to.have.property('publishSuccessRate');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Auth",
       "item": [
         {

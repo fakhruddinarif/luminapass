@@ -18,13 +18,20 @@ import { auditTrailAfterResponseHook } from "./middlewares/request-logger.middle
 import { authRoutes } from "./routes/auth.routes";
 import { eventsRoutes } from "./routes/events.routes";
 import { paymentTransactionsRoutes } from "./routes/payment-transactions.routes";
+import { getOutboxQueueMetrics } from "./repositories/outbox.repository";
 import { ticketOrdersRoutes } from "./routes/ticket-orders.routes";
-import { errorResponse } from "./utils/http-response";
+import { errorResponse, successResponse } from "./utils/http-response";
 import { logError, logInfo } from "./utils/logger";
 import {
+  getOrderExpiryWorkerRuntimeMetrics,
   startOrderExpiryWorker,
   stopOrderExpiryWorker,
 } from "./workers/order-expiry.worker";
+import {
+  getOutboxWorkerRuntimeMetrics,
+  startOutboxWorker,
+  stopOutboxWorker,
+} from "./workers/outbox.worker";
 
 interface ErrorIssue {
   code: string;
@@ -149,10 +156,12 @@ export const app = new Elysia()
       });
     }
     startOrderExpiryWorker();
+    startOutboxWorker();
     logInfo(`Starting ${env.APP_NAME} in ${env.APP_ENV} mode`);
   })
   .onStop(async () => {
     stopOrderExpiryWorker();
+    stopOutboxWorker();
     await closeRabbitMQRuntime();
     await disconnectRedis();
     await disconnectDatabase();
@@ -199,6 +208,34 @@ export const app = new Elysia()
     );
   })
   .get("/health", () => ({ status: "ok" }))
+  .get("/metrics/workers", async ({ set }) => {
+    try {
+      const queueMetrics = await getOutboxQueueMetrics();
+      const outboxRuntime = getOutboxWorkerRuntimeMetrics();
+      const orderExpiryRuntime = getOrderExpiryWorkerRuntimeMetrics();
+
+      return successResponse(set, 200, "Worker metrics", {
+        generatedAt: new Date().toISOString(),
+        outbox: {
+          available: queueMetrics.available,
+          queueDepth: queueMetrics.queueDepth,
+          retryCount: queueMetrics.retryCount,
+          lagMs: queueMetrics.lagMs,
+          errorMessage: queueMetrics.errorMessage ?? null,
+          publishSuccessRate: outboxRuntime.publishSuccessRate,
+          runtime: outboxRuntime,
+        },
+        orderExpiry: orderExpiryRuntime,
+      });
+    } catch (error) {
+      return errorResponse(set, 500, "Failed to read worker metrics", [
+        {
+          code: "WORKER_METRICS_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ]);
+    }
+  })
   .use(authRoutes)
   .use(eventsRoutes)
   .use(ticketOrdersRoutes)

@@ -1,4 +1,5 @@
 import { and, eq, or, sql } from "drizzle-orm";
+import { DatabaseError } from "pg";
 
 import { db } from "../config/db";
 import type {
@@ -16,6 +17,7 @@ import type {
   PaymentTransactionAggregate,
   PaymentTransactionsRepositoryContract,
 } from "../interfaces/payment-transactions.interface";
+import { enqueueOutboxEventTx } from "./outbox.repository";
 
 function resolveMockPaymentResult(simulatorCode?: string): {
   status: "captured" | "failed";
@@ -200,6 +202,19 @@ export const paymentTransactionsRepository: PaymentTransactionsRepositoryContrac
           );
         }
 
+        await enqueueOutboxEventTx(tx, {
+          aggregateType: "payment_transaction",
+          aggregateId: createdTxn.id,
+          eventType: "payment.transaction.created",
+          routingKey: "payment.transaction.created",
+          payload: {
+            orderId: updatedOrder.id,
+            paymentId: createdTxn.id,
+            status: createdTxn.status,
+            provider: createdTxn.provider,
+          },
+        });
+
         return {
           transaction: createdTxn,
           order: updatedOrder,
@@ -232,6 +247,30 @@ export const paymentTransactionsRepository: PaymentTransactionsRepositoryContrac
           return null;
         }
 
+        if (input.webhookEventId) {
+          const eventExists = await tx.query.paymentTransactions.findFirst({
+            where: and(
+              eq(paymentTransactions.provider, input.provider),
+              eq(paymentTransactions.webhookEventId, input.webhookEventId),
+            ),
+          });
+
+          if (eventExists && eventExists.id !== transaction.id) {
+            const existingOrder = await tx.query.ticketOrders.findFirst({
+              where: eq(ticketOrders.id, eventExists.orderId),
+            });
+
+            if (!existingOrder) {
+              throw new Error("ORDER_NOT_FOUND");
+            }
+
+            return {
+              transaction: eventExists,
+              order: existingOrder,
+            } satisfies PaymentTransactionAggregate;
+          }
+        }
+
         const now = new Date();
         const targetOrderStatus = mapPaymentStatusToOrderStatus(input.status);
 
@@ -253,27 +292,65 @@ export const paymentTransactionsRepository: PaymentTransactionsRepositoryContrac
           } satisfies PaymentTransactionAggregate;
         }
 
-        const [updatedTxn] = await tx
-          .update(paymentTransactions)
-          .set({
-            status: input.status,
-            rawProviderStatus: input.rawProviderStatus ?? input.status,
-            statusMessage: input.statusMessage,
-            paymentType: input.paymentType,
-            channelCode: input.channelCode,
-            fraudStatus: input.fraudStatus,
-            webhookEventId: input.webhookEventId,
-            webhookSignatureValid: input.signatureValid,
-            webhookReceivedAt: now,
-            webhookPayload: input.payload ?? null,
-            ...(input.status === "captured" ? { settledAt: now } : {}),
-            ...(input.status === "failed"
-              ? { failureReason: input.statusMessage }
-              : {}),
-            updatedAt: now,
-          })
-          .where(eq(paymentTransactions.id, transaction.id))
-          .returning();
+        let updatedTxn: typeof paymentTransactions.$inferSelect | undefined;
+
+        try {
+          [updatedTxn] = await tx
+            .update(paymentTransactions)
+            .set({
+              status: input.status,
+              rawProviderStatus: input.rawProviderStatus ?? input.status,
+              statusMessage: input.statusMessage,
+              paymentType: input.paymentType,
+              channelCode: input.channelCode,
+              fraudStatus: input.fraudStatus,
+              webhookEventId: input.webhookEventId,
+              webhookSignatureValid: input.signatureValid,
+              webhookReceivedAt: now,
+              webhookPayload: input.payload ?? null,
+              ...(input.status === "captured" ? { settledAt: now } : {}),
+              ...(input.status === "failed"
+                ? { failureReason: input.statusMessage }
+                : {}),
+              updatedAt: now,
+            })
+            .where(eq(paymentTransactions.id, transaction.id))
+            .returning();
+        } catch (error) {
+          const isDedupRace =
+            error instanceof DatabaseError &&
+            error.code === "23505" &&
+            input.webhookEventId;
+
+          if (!isDedupRace) {
+            throw error;
+          }
+
+          const existingByWebhook =
+            await tx.query.paymentTransactions.findFirst({
+              where: and(
+                eq(paymentTransactions.provider, input.provider),
+                eq(paymentTransactions.webhookEventId, input.webhookEventId!),
+              ),
+            });
+
+          if (!existingByWebhook) {
+            throw error;
+          }
+
+          const existingOrder = await tx.query.ticketOrders.findFirst({
+            where: eq(ticketOrders.id, existingByWebhook.orderId),
+          });
+
+          if (!existingOrder) {
+            throw new Error("ORDER_NOT_FOUND");
+          }
+
+          return {
+            transaction: existingByWebhook,
+            order: existingOrder,
+          } satisfies PaymentTransactionAggregate;
+        }
 
         if (!updatedTxn) {
           throw new Error("TRANSACTION_UPDATE_FAILED");
@@ -309,6 +386,20 @@ export const paymentTransactionsRepository: PaymentTransactionsRepositoryContrac
             `Webhook moved order to ${targetOrderStatus}, reserved stock released`,
           );
         }
+
+        await enqueueOutboxEventTx(tx, {
+          aggregateType: "payment_transaction",
+          aggregateId: updatedTxn.id,
+          eventType: "payment.webhook.processed",
+          routingKey: "payment.webhook.processed",
+          payload: {
+            orderId: updatedOrder.id,
+            paymentId: updatedTxn.id,
+            status: updatedTxn.status,
+            provider: updatedTxn.provider,
+            webhookEventId: updatedTxn.webhookEventId,
+          },
+        });
 
         return {
           transaction: updatedTxn,

@@ -1,7 +1,6 @@
 import { DatabaseError } from "pg";
 
 import type { CreateTicketOrderBody } from "../dtos/ticket-orders";
-import { publishAppEvent } from "../config/rabbitmq-runtime";
 import {
   TicketOrdersServiceError,
   type TicketOrderAggregate,
@@ -62,20 +61,7 @@ export class TicketOrdersService implements TicketOrdersServiceContract {
     input: CreateTicketOrderBody,
   ): Promise<TicketOrderAggregate> {
     try {
-      const result = await this.repository.createTicketOrder(
-        actorUserId,
-        input,
-      );
-
-      await publishAppEvent("order.created", {
-        orderId: result.order.id,
-        orderCode: result.order.orderCode,
-        eventId: result.order.eventId,
-        userId: result.order.userId,
-        status: result.order.status,
-      });
-
-      return result;
+      return await this.repository.createTicketOrder(actorUserId, input);
     } catch (error) {
       mapOrderDatabaseError(error);
     }

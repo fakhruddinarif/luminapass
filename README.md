@@ -50,10 +50,16 @@ Important variables:
 
 ## 5. Run Dependency Services
 
-Run PostgreSQL, Redis, RabbitMQ with Docker Compose:
+Run PostgreSQL, Redis, RabbitMQ, and app with Docker Compose:
 
 ```powershell
 docker compose up -d
+```
+
+Optional load test via Docker profile:
+
+```powershell
+docker compose --profile loadtest run --rm k6
 ```
 
 ## 6. Install Project Dependencies
@@ -93,6 +99,22 @@ bun run dev
 Health check:
 
 - GET /health
+
+Worker metrics dashboard:
+
+- GET /metrics/workers
+
+Metrics included:
+
+- queueDepth
+- publishSuccessRate
+- retryCount
+- lagMs
+
+Notes:
+
+- `outbox.available = false` means outbox table is not ready yet.
+- Run `bun run db:push` to apply latest schema and enable outbox metrics.
 
 ## 9. Run Testing
 
@@ -147,3 +169,41 @@ Default baseUrl:
 ### Redis authentication error
 
 - Make sure REDIS_PASSWORD in .env matches Redis container config.
+
+### Outbox metrics unavailable
+
+- If `/metrics/workers` shows `outbox.available = false`, run migration:
+
+```powershell
+bun run db:push
+```
+
+## 12. CI/CD
+
+GitHub Actions workflow is available at .github/workflows/ci-cd.yml.
+
+Pipeline stages:
+
+- CI: install dependencies, typecheck, and unit tests.
+- Build & Publish: build Docker image and push to GHCR.
+- Deploy (optional): deploy via SSH when deploy secrets are configured.
+
+Required GitHub secrets for deployment:
+
+- DEPLOY_HOST
+- DEPLOY_USER
+- DEPLOY_SSH_KEY
+- DEPLOY_PATH
+- DEPLOY_HEALTHCHECK_URL (optional, default: http://localhost:3000/health)
+
+### Production Docker Compose
+
+Production override file is available at docker-compose.prod.yml.
+
+Deployment command example:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.prod.yml pull app
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm app bun run db:push
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build app
+```

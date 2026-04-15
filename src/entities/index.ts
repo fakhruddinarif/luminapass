@@ -11,4 +11,5 @@ export * from "./stock-movements";
 export * from "./livestream-variants";
 export * from "./stream-sessions";
 export * from "./stream-quality-events";
+export * from "./outbox-events";
 export * from "./schema";

@@ -1,0 +1,120 @@
+name: CI-CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  ci:
+    name: Typecheck and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Run tests
+        run: bun test
+
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name != 'pull_request' && secrets.DEPLOY_HOST != '' && secrets.DEPLOY_USER != '' && secrets.DEPLOY_SSH_KEY != '' && secrets.DEPLOY_PATH != ''
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            export APP_IMAGE=ghcr.io/${{ github.repository }}:latest
+            echo "Deploying image from GHCR"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull app
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm app bun run db:push
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build app
+
+            HEALTH_URL="${{ secrets.DEPLOY_HEALTHCHECK_URL }}"
+            if [ -z "$HEALTH_URL" ]; then
+              HEALTH_URL="http://localhost:3000/health"
+            fi
+
+            echo "Waiting for health endpoint: $HEALTH_URL"
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent --show-error "$HEALTH_URL" >/dev/null; then
+                echo "Health check passed"
+                break
+              fi
+
+              if [ "$attempt" -eq 30 ]; then
+                echo "Health check failed after deployment"
+                docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+                exit 1
+              fi
+
+              sleep 5
+            done
+
+            docker image prune -f

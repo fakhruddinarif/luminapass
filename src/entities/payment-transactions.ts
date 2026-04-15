@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -89,6 +90,9 @@ export const paymentTransactions = pgTable(
       table.provider,
       table.webhookEventId,
     ),
+    webhookEventUniqueIdx: uniqueIndex(
+      "payment_transactions_provider_webhook_event_unique_idx",
+    ).on(table.provider, table.webhookEventId),
     createdAtIdx: index("payment_transactions_created_at_idx").on(
       table.createdAt,
     ),

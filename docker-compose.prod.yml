@@ -1,0 +1,17 @@
+services:
+  app:
+    image: ${APP_IMAGE:?APP_IMAGE is required for production deploy}
+    pull_policy: always
+    environment:
+      APP_ENV: production
+      APP_DEBUG: false
+    restart: always
+
+  db:
+    restart: always
+
+  redis:
+    restart: always
+
+  rabbitmq:
+    restart: always

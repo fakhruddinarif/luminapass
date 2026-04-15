@@ -8,7 +8,18 @@ const WORKER_INTERVAL_MS = 5_000;
 
 let timerRef: ReturnType<typeof setInterval> | null = null;
 
+const orderExpiryWorkerMetrics = {
+  ticks: 0,
+  lockMisses: 0,
+  totalExpiredOrdersProcessed: 0,
+  lastProcessedCount: 0,
+  lastTickAt: null as string | null,
+};
+
 async function runOrderExpiryTick(): Promise<void> {
+  orderExpiryWorkerMetrics.ticks += 1;
+  orderExpiryWorkerMetrics.lastTickAt = new Date().toISOString();
+
   const lockValue = `${process.pid}:${Date.now()}`;
 
   const lockResult = await redis.set(
@@ -20,11 +31,14 @@ async function runOrderExpiryTick(): Promise<void> {
   );
 
   if (lockResult !== "OK") {
+    orderExpiryWorkerMetrics.lockMisses += 1;
     return;
   }
 
   try {
     const processed = await expireAwaitingPaymentOrders(200);
+    orderExpiryWorkerMetrics.lastProcessedCount = processed;
+    orderExpiryWorkerMetrics.totalExpiredOrdersProcessed += processed;
     if (processed > 0) {
       logInfo("Expired orders processed", { processed });
     }
@@ -57,4 +71,17 @@ export function stopOrderExpiryWorker(): void {
   clearInterval(timerRef);
   timerRef = null;
   logInfo("Order expiry worker stopped");
+}
+
+export function getOrderExpiryWorkerRuntimeMetrics() {
+  return {
+    intervalMs: WORKER_INTERVAL_MS,
+    lockTtlMs: LOCK_TTL_MS,
+    ticks: orderExpiryWorkerMetrics.ticks,
+    lockMisses: orderExpiryWorkerMetrics.lockMisses,
+    totalExpiredOrdersProcessed:
+      orderExpiryWorkerMetrics.totalExpiredOrdersProcessed,
+    lastProcessedCount: orderExpiryWorkerMetrics.lastProcessedCount,
+    lastTickAt: orderExpiryWorkerMetrics.lastTickAt,
+  };
 }
