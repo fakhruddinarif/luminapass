@@ -5,6 +5,7 @@ export * from "./events";
 export * from "./event-sections";
 export * from "./ticket-orders";
 export * from "./ticket-order-items";
+export * from "./ticket-units";
 export * from "./payment-transactions";
 export * from "./waiting-room-jobs";
 export * from "./stock-movements";

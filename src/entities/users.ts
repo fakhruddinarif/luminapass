@@ -7,8 +7,14 @@ import {
   varchar,
   pgTable,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { userRoleEnum, userStatusEnum } from "./enums";
+import { events } from "./events";
+import { stockMovements } from "./stock-movements";
+import { streamSessions } from "./stream-sessions";
+import { ticketOrders } from "./ticket-orders";
+import { waitingRoomJobs } from "./waiting-room-jobs";
 
 export const users = pgTable(
   "users",
@@ -43,3 +49,12 @@ export const users = pgTable(
     statusIdx: index("users_status_idx").on(table.status),
   }),
 );
+
+export const usersRelations = relations(users, ({ many }) => ({
+  createdEvents: many(events, { relationName: "events_created_by_user" }),
+  updatedEvents: many(events, { relationName: "events_updated_by_user" }),
+  ticketOrders: many(ticketOrders),
+  waitingRoomJobs: many(waitingRoomJobs),
+  streamSessions: many(streamSessions),
+  stockMovements: many(stockMovements),
+}));

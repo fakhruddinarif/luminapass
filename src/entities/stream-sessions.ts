@@ -1,7 +1,9 @@
 import { index, pgTable, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { streamSessionStatusEnum, streamResolutionEnum } from "./enums";
 import { events } from "./events";
+import { streamQualityEvents } from "./stream-quality-events";
 import { users } from "./users";
 
 export const streamSessions = pgTable(
@@ -42,5 +44,20 @@ export const streamSessions = pgTable(
       table.status,
     ),
     startedAtIdx: index("stream_sessions_started_at_idx").on(table.startedAt),
+  }),
+);
+
+export const streamSessionsRelations = relations(
+  streamSessions,
+  ({ many, one }) => ({
+    event: one(events, {
+      fields: [streamSessions.eventId],
+      references: [events.id],
+    }),
+    user: one(users, {
+      fields: [streamSessions.userId],
+      references: [users.id],
+    }),
+    qualityEvents: many(streamQualityEvents),
   }),
 );

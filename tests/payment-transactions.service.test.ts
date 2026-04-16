@@ -24,31 +24,47 @@ describe("PaymentTransactionsService", () => {
   it("creates payment transaction successfully", async () => {
     const repository = {
       createPaymentTransaction: async () => ({
-        transaction: { id: "txn-1" },
-        order: { id: "order-1" },
+        id: "txn-1",
+        order: { id: "order-1", items: [], event: null },
       }),
+      listPaymentTransactions: async () => ({
+        items: [],
+        page: 1,
+        size: 10,
+        totalItem: 0,
+        totalPage: 1,
+      }),
+      getPaymentTransactionById: async () => null,
       processPaymentWebhook: async () => null,
     };
 
     const service = new PaymentTransactionsService(repository as any);
     const result = await service.createPaymentTransaction(createPaymentInput);
 
-    expect(result.transaction).toBeDefined();
+    expect(result.id).toBeDefined();
     expect(result.order).toBeDefined();
   });
 
   it("throws webhook-transaction-not-found when webhook target missing", async () => {
     const repository = {
       createPaymentTransaction: async () => ({
-        transaction: { id: "txn-1" },
-        order: { id: "order-1" },
+        id: "txn-1",
+        order: { id: "order-1", items: [], event: null },
       }),
+      listPaymentTransactions: async () => ({
+        items: [],
+        page: 1,
+        size: 10,
+        totalItem: 0,
+        totalPage: 1,
+      }),
+      getPaymentTransactionById: async () => null,
       processPaymentWebhook: async () => null,
     };
 
     const service = new PaymentTransactionsService(repository as any);
 
-    await expect(
+    return expect(
       service.processPaymentWebhook(webhookInput),
     ).rejects.toMatchObject({
       code: "WEBHOOK_TRANSACTION_NOT_FOUND",
@@ -60,12 +76,20 @@ describe("PaymentTransactionsService", () => {
       createPaymentTransaction: async () => {
         throw new Error("ORDER_NOT_FOUND");
       },
+      listPaymentTransactions: async () => ({
+        items: [],
+        page: 1,
+        size: 10,
+        totalItem: 0,
+        totalPage: 1,
+      }),
+      getPaymentTransactionById: async () => null,
       processPaymentWebhook: async () => null,
     };
 
     const service = new PaymentTransactionsService(repository as any);
 
-    await expect(
+    return expect(
       service.createPaymentTransaction(createPaymentInput),
     ).rejects.toBeInstanceOf(PaymentTransactionsServiceError);
   });

@@ -8,6 +8,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { streamResolutionEnum } from "./enums";
 import { events } from "./events";
@@ -40,5 +41,15 @@ export const livestreamVariants = pgTable(
       table.eventId,
       table.isDefault,
     ),
+  }),
+);
+
+export const livestreamVariantsRelations = relations(
+  livestreamVariants,
+  ({ one }) => ({
+    event: one(events, {
+      fields: [livestreamVariants.eventId],
+      references: [events.id],
+    }),
   }),
 );

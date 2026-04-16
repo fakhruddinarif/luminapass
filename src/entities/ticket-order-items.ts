@@ -7,9 +7,11 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { eventSections } from "./event-sections";
 import { ticketOrders } from "./ticket-orders";
+import { ticketUnits } from "./ticket-units";
 
 export const ticketOrderItems = pgTable(
   "ticket_order_items",
@@ -39,5 +41,20 @@ export const ticketOrderItems = pgTable(
     eventSectionIdx: index("ticket_order_items_event_section_idx").on(
       table.eventSectionId,
     ),
+  }),
+);
+
+export const ticketOrderItemsRelations = relations(
+  ticketOrderItems,
+  ({ many, one }) => ({
+    order: one(ticketOrders, {
+      fields: [ticketOrderItems.orderId],
+      references: [ticketOrders.id],
+    }),
+    eventSection: one(eventSections, {
+      fields: [ticketOrderItems.eventSectionId],
+      references: [eventSections.id],
+    }),
+    ticketUnits: many(ticketUnits),
   }),
 );

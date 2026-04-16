@@ -34,7 +34,19 @@ export const paymentWebhookBodySchema = z
     path: ["providerOrderId"],
   });
 
+export const listPaymentTransactionsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  size: z.coerce.number().int().min(1).max(100).default(10),
+});
+
+export const getPaymentTransactionParamsSchema = z.object({
+  paymentId: z.string().uuid(),
+});
+
 export type CreatePaymentTransactionBody = z.infer<
   typeof createPaymentTransactionBodySchema
 >;
 export type PaymentWebhookBody = z.infer<typeof paymentWebhookBodySchema>;
+export type ListPaymentTransactionsQuery = z.infer<
+  typeof listPaymentTransactionsQuerySchema
+>;

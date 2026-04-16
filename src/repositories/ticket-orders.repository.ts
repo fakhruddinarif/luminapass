@@ -1,7 +1,6 @@
 import { and, eq, inArray, gte, lte, sql } from "drizzle-orm";
 
 import { db } from "../config/db";
-import type { CreateTicketOrderBody } from "../dtos/ticket-orders";
 import {
   eventSections,
   events,
@@ -9,11 +8,10 @@ import {
   ticketOrderItems,
   ticketOrders,
 } from "../entities";
-import type {
-  TicketOrderAggregate,
-  TicketOrdersRepositoryContract,
-} from "../interfaces/ticket-orders.interface";
+import type { TicketOrdersRepositoryContract } from "../interfaces/ticket-orders.interface";
+import { synchronizeEventStatusTx } from "./events.repository";
 import { enqueueOutboxEventTx } from "./outbox.repository";
+import { scanTicketUnitByCode } from "./ticket-units.repository";
 
 function makeOrderCode(): string {
   const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -24,12 +22,27 @@ function makeOrderCode(): string {
 export const ticketOrdersRepository: TicketOrdersRepositoryContract = {
   async createTicketOrder(actorUserId, input) {
     return db.transaction(async (tx) => {
-      const event = await tx.query.events.findFirst({
+      let event = await tx.query.events.findFirst({
         where: eq(events.id, input.eventId),
       });
 
       if (!event) {
         throw new Error("EVENT_NOT_FOUND");
+      }
+
+      // Sync lifecycle status before validating sale eligibility.
+      await synchronizeEventStatusTx(tx, input.eventId);
+
+      event = await tx.query.events.findFirst({
+        where: eq(events.id, input.eventId),
+      });
+
+      if (!event) {
+        throw new Error("EVENT_NOT_FOUND");
+      }
+
+      if (event.status !== "on_sale") {
+        throw new Error("EVENT_NOT_ON_SALE");
       }
 
       const sectionIds = input.items.map((item) => item.eventSectionId);
@@ -112,6 +125,11 @@ export const ticketOrdersRepository: TicketOrdersRepositoryContract = {
               .returning()
           : [];
 
+      // Ensure expected relational shape is available before further stock handling.
+      if (createdItems.length !== orderItemPayload.length) {
+        throw new Error("ORDER_ITEMS_INSERT_FAILED");
+      }
+
       for (const row of orderItemPayload) {
         const [updatedSection] = await tx
           .update(eventSections)
@@ -143,6 +161,8 @@ export const ticketOrdersRepository: TicketOrdersRepositoryContract = {
         });
       }
 
+      await synchronizeEventStatusTx(tx, input.eventId);
+
       await enqueueOutboxEventTx(tx, {
         aggregateType: "ticket_order",
         aggregateId: createdOrder.id,
@@ -157,31 +177,78 @@ export const ticketOrdersRepository: TicketOrdersRepositoryContract = {
         },
       });
 
-      return {
-        order: createdOrder,
-        items: createdItems,
-      } satisfies TicketOrderAggregate;
+      const createdOrderWithPayments = await tx.query.ticketOrders.findFirst({
+        where: eq(ticketOrders.id, createdOrder.id),
+        with: {
+          payments: true,
+        },
+      });
+
+      if (!createdOrderWithPayments) {
+        throw new Error("ORDER_NOT_FOUND");
+      }
+
+      return createdOrderWithPayments;
     });
   },
 
   async getTicketOrderById(orderId) {
     const order = await db.query.ticketOrders.findFirst({
       where: eq(ticketOrders.id, orderId),
+      with: {
+        payments: true,
+      },
     });
 
     if (!order) {
       return null;
     }
 
-    const items = await db
-      .select()
-      .from(ticketOrderItems)
-      .where(eq(ticketOrderItems.orderId, order.id));
+    return order;
+  },
+
+  async listTicketOrders(page, size, actorUserId) {
+    const pageQuery = Math.max(1, page);
+    const sizeQuery = Math.max(1, Math.min(100, size));
+    const offset = (pageQuery - 1) * sizeQuery;
+
+    const whereClause = actorUserId
+      ? eq(ticketOrders.userId, actorUserId)
+      : undefined;
+
+    const orders = await db.query.ticketOrders.findMany({
+      where: whereClause,
+      with: {
+        payments: true,
+      },
+      orderBy: (table, { desc }) => desc(table.createdAt),
+      limit: sizeQuery,
+      offset,
+    });
+
+    const [countRow] = whereClause
+      ? await db
+          .select({ count: sql<number>`cast(count(*) as int)` })
+          .from(ticketOrders)
+          .where(whereClause)
+      : await db
+          .select({ count: sql<number>`cast(count(*) as int)` })
+          .from(ticketOrders);
+
+    const totalItem = countRow?.count ?? 0;
+    const totalPage = Math.max(1, Math.ceil(totalItem / sizeQuery));
 
     return {
-      order,
-      items,
-    } satisfies TicketOrderAggregate;
+      items: orders,
+      page: pageQuery,
+      size: sizeQuery,
+      totalItem,
+      totalPage,
+    };
+  },
+
+  async scanTicketUnitByCode(ticketCode) {
+    return scanTicketUnitByCode(ticketCode);
   },
 };
 
@@ -189,37 +256,31 @@ export async function expireAwaitingPaymentOrders(
   limit = 100,
 ): Promise<number> {
   return db.transaction(async (tx) => {
-    const expiredOrders = await tx
-      .select({
-        id: ticketOrders.id,
-      })
-      .from(ticketOrders)
-      .where(
-        and(
-          inArray(ticketOrders.status, ["awaiting_payment", "reserved"]),
-          lte(ticketOrders.expiresAt, new Date()),
-        ),
-      )
-      .limit(limit);
+    const expiredOrders = await tx.query.ticketOrders.findMany({
+      where: and(
+        inArray(ticketOrders.status, ["awaiting_payment", "reserved"]),
+        lte(ticketOrders.expiresAt, new Date()),
+      ),
+      with: {
+        items: {
+          with: {
+            eventSection: true,
+          },
+        },
+      },
+      limit,
+    });
 
     let processed = 0;
+    const impactedEventIds = new Set<string>();
 
     for (const order of expiredOrders) {
-      const items = await tx
-        .select()
-        .from(ticketOrderItems)
-        .where(eq(ticketOrderItems.orderId, order.id));
-
-      for (const item of items) {
-        const [section] = await tx
-          .select()
-          .from(eventSections)
-          .where(eq(eventSections.id, item.eventSectionId))
-          .limit(1);
-
-        if (!section) {
+      for (const item of order.items) {
+        if (!item.eventSection) {
           continue;
         }
+
+        impactedEventIds.add(item.eventSection.eventId);
 
         const [updatedSection] = await tx
           .update(eventSections)
@@ -227,7 +288,7 @@ export async function expireAwaitingPaymentOrders(
             capacity: sql`${eventSections.capacity} + ${item.quantity}`,
             updatedAt: new Date(),
           })
-          .where(eq(eventSections.id, section.id))
+          .where(eq(eventSections.id, item.eventSection.id))
           .returning();
 
         if (!updatedSection) {
@@ -235,7 +296,7 @@ export async function expireAwaitingPaymentOrders(
         }
 
         await tx.insert(stockMovements).values({
-          eventSectionId: section.id,
+          eventSectionId: item.eventSection.id,
           orderId: order.id,
           movementType: "release",
           quantity: item.quantity,
@@ -255,6 +316,10 @@ export async function expireAwaitingPaymentOrders(
         .where(eq(ticketOrders.id, order.id));
 
       processed += 1;
+    }
+
+    for (const eventId of impactedEventIds) {
+      await synchronizeEventStatusTx(tx, eventId);
     }
 
     return processed;

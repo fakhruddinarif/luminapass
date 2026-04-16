@@ -3,6 +3,7 @@ import { and, eq, isNull, or } from "drizzle-orm";
 import { db } from "../config/db";
 import type { CreateUserParams } from "../dtos/user";
 import { users } from "../entities/users";
+import type { AuthUserRepositoryContract } from "../interfaces/auth.interface";
 import { GeneralRepository } from "./base.repository";
 
 const usersBaseRepository = new GeneralRepository({
@@ -12,28 +13,17 @@ const usersBaseRepository = new GeneralRepository({
   updatedAtColumn: users.updatedAt,
 });
 
-export interface UserRepository {
-  create: (input: CreateUserParams) => Promise<typeof users.$inferSelect>;
-  update: (
+export interface UserRepository extends AuthUserRepositoryContract {
+  update(
     id: string,
     data: Partial<typeof users.$inferInsert>,
-  ) => Promise<typeof users.$inferSelect | null>;
-  softDelete: (id: string) => Promise<boolean>;
-  delete: (id: string) => Promise<boolean>;
-  getById: (
+  ): Promise<typeof users.$inferSelect | null>;
+  softDelete(id: string): Promise<boolean>;
+  delete(id: string): Promise<boolean>;
+  getById(
     id: string,
     options?: { includeDeleted?: boolean },
-  ) => Promise<typeof users.$inferSelect | null>;
-  findUserByEmail: (email: string) => ReturnType<typeof findUserByEmail>;
-  findUserByUsername: (
-    username: string,
-  ) => ReturnType<typeof findUserByUsername>;
-  findUserById: (id: string) => ReturnType<typeof findUserById>;
-  findUserByEmailOrUsername: (
-    email: string,
-    username: string,
-  ) => ReturnType<typeof findUserByEmailOrUsername>;
-  updateLastLoginAt: (id: string, loginAt: Date) => Promise<void>;
+  ): Promise<typeof users.$inferSelect | null>;
 }
 
 export async function findUserByEmail(email: string) {

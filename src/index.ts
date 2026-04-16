@@ -23,6 +23,11 @@ import { ticketOrdersRoutes } from "./routes/ticket-orders.routes";
 import { errorResponse, successResponse } from "./utils/http-response";
 import { logError, logInfo } from "./utils/logger";
 import {
+  getEventStatusWorkerRuntimeMetrics,
+  startEventStatusWorker,
+  stopEventStatusWorker,
+} from "./workers/event-status.worker";
+import {
   getOrderExpiryWorkerRuntimeMetrics,
   startOrderExpiryWorker,
   stopOrderExpiryWorker,
@@ -32,6 +37,11 @@ import {
   startOutboxWorker,
   stopOutboxWorker,
 } from "./workers/outbox.worker";
+import {
+  getTicketEmailWorkerRuntimeMetrics,
+  startTicketEmailWorker,
+  stopTicketEmailWorker,
+} from "./workers/ticket-email.worker";
 
 interface ErrorIssue {
   code: string;
@@ -156,12 +166,16 @@ export const app = new Elysia()
       });
     }
     startOrderExpiryWorker();
+    startEventStatusWorker();
     startOutboxWorker();
+    startTicketEmailWorker();
     logInfo(`Starting ${env.APP_NAME} in ${env.APP_ENV} mode`);
   })
   .onStop(async () => {
     stopOrderExpiryWorker();
+    stopEventStatusWorker();
     stopOutboxWorker();
+    stopTicketEmailWorker();
     await closeRabbitMQRuntime();
     await disconnectRedis();
     await disconnectDatabase();
@@ -175,12 +189,15 @@ export const app = new Elysia()
     });
 
     if (code === "PARSE") {
-      return errorResponse(
-        set,
-        400,
-        "Invalid request payload",
-        extractErrorIssues(String(code), error),
-      );
+      return errorResponse(set, 400, "Invalid JSON payload", [
+        ...extractErrorIssues(String(code), error),
+        {
+          code: "PARSE_HINT",
+          message:
+            "Ensure request body is valid JSON and Content-Type is application/json",
+          field: "body",
+        },
+      ]);
     }
 
     if (code === "VALIDATION") {
@@ -213,6 +230,8 @@ export const app = new Elysia()
       const queueMetrics = await getOutboxQueueMetrics();
       const outboxRuntime = getOutboxWorkerRuntimeMetrics();
       const orderExpiryRuntime = getOrderExpiryWorkerRuntimeMetrics();
+      const eventStatusRuntime = getEventStatusWorkerRuntimeMetrics();
+      const ticketEmailRuntime = getTicketEmailWorkerRuntimeMetrics();
 
       return successResponse(set, 200, "Worker metrics", {
         generatedAt: new Date().toISOString(),
@@ -226,6 +245,8 @@ export const app = new Elysia()
           runtime: outboxRuntime,
         },
         orderExpiry: orderExpiryRuntime,
+        eventStatus: eventStatusRuntime,
+        ticketEmail: ticketEmailRuntime,
       });
     } catch (error) {
       return errorResponse(set, 500, "Failed to read worker metrics", [

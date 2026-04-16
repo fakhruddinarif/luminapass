@@ -1,6 +1,7 @@
 import type {
   CreateEventBody,
   LiveDashboardQuery,
+  ListEventsQuery,
   StockOverrideBody,
   UpdateEventBody,
 } from "../dtos/admin";
@@ -34,6 +35,60 @@ function forbidden(set: RouteSet) {
 
 export class EventsController {
   constructor(private readonly eventsService: EventsServiceContract) {}
+
+  async listEvents(query: ListEventsQuery, context: EventsControllerContext) {
+    try {
+      const result = await this.eventsService.listEvents(
+        query.page,
+        query.size,
+        query.search,
+        query.filter_status,
+      );
+
+      return successResponse(
+        context.set,
+        200,
+        "Events retrieved successfully",
+        result.items,
+        {
+          page: result.page,
+          size: result.size,
+          total_page: result.totalPage,
+          total_item: result.totalItem,
+        },
+      );
+    } catch (error) {
+      return this.handleError(context.set, error);
+    }
+  }
+
+  async getEventById(eventId: string, context: EventsControllerContext) {
+    try {
+      const result = await this.eventsService.getEventById(eventId);
+      return successResponse(
+        context.set,
+        200,
+        "Event retrieved successfully",
+        result,
+      );
+    } catch (error) {
+      return this.handleError(context.set, error);
+    }
+  }
+
+  async getEventBySlug(slug: string, context: EventsControllerContext) {
+    try {
+      const result = await this.eventsService.getEventBySlug(slug);
+      return successResponse(
+        context.set,
+        200,
+        "Event retrieved successfully",
+        result,
+      );
+    } catch (error) {
+      return this.handleError(context.set, error);
+    }
+  }
 
   private async authorizeAdmin(context: EventsControllerContext) {
     const authPayload = await resolveRequestAuth(context.request, context.jwt);

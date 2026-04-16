@@ -3,6 +3,8 @@ import { Elysia } from "elysia";
 import { PaymentTransactionsController } from "../controllers/payment-transactions.controller";
 import {
   createPaymentTransactionBodySchema,
+  getPaymentTransactionParamsSchema,
+  listPaymentTransactionsQuerySchema,
   paymentWebhookBodySchema,
 } from "../dtos/payment-transactions";
 import type { JwtService } from "../interfaces/auth.interface";
@@ -18,6 +20,8 @@ interface RouteContextBase {
   body: unknown;
   request: Request;
   set: RouteSet;
+  query?: Record<string, unknown>;
+  params: Record<string, string | undefined>;
 }
 
 interface RouteContext extends RouteContextBase {
@@ -33,6 +37,49 @@ const paymentTransactionsController = new PaymentTransactionsController(
 );
 
 export const paymentTransactionsRoutes = new Elysia({ prefix: "/api" })
+  .get("/payment-transactions", async (context) => {
+    const { request, set, query } = context as unknown as RouteContextBase;
+    const jwt = parseJwt(context);
+
+    const parsed = listPaymentTransactionsQuerySchema.safeParse(query ?? {});
+    if (!parsed.success) {
+      return errorResponse(
+        set,
+        400,
+        "Invalid payment transactions query parameters",
+        parsed.error.issues,
+      );
+    }
+
+    return paymentTransactionsController.listPaymentTransactions(parsed.data, {
+      request,
+      set,
+      jwt,
+    });
+  })
+  .get("/payment-transactions/:paymentId", async (context) => {
+    const { request, set, params } = context as unknown as RouteContextBase;
+    const jwt = parseJwt(context);
+
+    const parsed = getPaymentTransactionParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return errorResponse(
+        set,
+        400,
+        "Invalid payment transaction id parameter",
+        parsed.error.issues,
+      );
+    }
+
+    return paymentTransactionsController.getPaymentTransactionById(
+      parsed.data.paymentId,
+      {
+        request,
+        set,
+        jwt,
+      },
+    );
+  })
   .post("/payment-transactions", async (context) => {
     const { body, request, set } = context as unknown as RouteContextBase;
     const jwt = parseJwt(context);

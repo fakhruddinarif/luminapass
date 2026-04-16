@@ -6,8 +6,9 @@ import {
   resolveRequestAuth,
 } from "../middlewares/auth.middleware";
 import type {
+  AuthControllerContext,
+  AuthControllerContract,
   AuthServiceContract,
-  JwtService,
 } from "../interfaces/auth.interface";
 import { AuthServiceError } from "../interfaces/auth.interface";
 import {
@@ -17,18 +18,7 @@ import {
 } from "../services/auth.service";
 import { errorResponse, successResponse } from "../utils/http-response";
 
-interface RouteSet {
-  status?: number;
-  headers: Record<string, string | string[] | undefined>;
-}
-
-export interface AuthControllerContext {
-  set: RouteSet;
-  request: Request;
-  jwt: JwtService;
-}
-
-export class AuthController {
+export class AuthController implements AuthControllerContract {
   constructor(private readonly authService: AuthServiceContract) {}
 
   async register(body: RegisterBody, context: AuthControllerContext) {
@@ -57,7 +47,13 @@ export class AuthController {
         error instanceof AuthServiceError &&
         error.code === "USER_ALREADY_EXISTS"
       ) {
-        return errorResponse(context.set, 409, error.message);
+        return errorResponse(context.set, 409, error.message, [
+          {
+            code: error.code,
+            message: error.message,
+            field: "email,username",
+          },
+        ]);
       }
 
       throw error;
@@ -90,7 +86,13 @@ export class AuthController {
         error instanceof AuthServiceError &&
         error.code === "INVALID_CREDENTIALS"
       ) {
-        return errorResponse(context.set, 401, "Invalid email or password");
+        return errorResponse(context.set, 401, "Invalid email or password", [
+          {
+            code: error.code,
+            message: "Invalid email or password",
+            field: "email,password",
+          },
+        ]);
       }
 
       if (
@@ -101,6 +103,13 @@ export class AuthController {
           context.set,
           403,
           "Account is not active or cannot be used",
+          [
+            {
+              code: error.code,
+              message: "Account is not active or cannot be used",
+              field: "status",
+            },
+          ],
         );
       }
 
@@ -111,7 +120,12 @@ export class AuthController {
   async info(context: AuthControllerContext) {
     const authPayload = await resolveRequestAuth(context.request, context.jwt);
     if (!authPayload) {
-      return errorResponse(context.set, 401, "Unauthorized");
+      return errorResponse(context.set, 401, "Unauthorized", [
+        {
+          code: "UNAUTHORIZED",
+          message: "Access token is missing, invalid, or expired",
+        },
+      ]);
     }
 
     try {
@@ -124,7 +138,12 @@ export class AuthController {
       );
     } catch (error) {
       if (error instanceof AuthServiceError) {
-        return errorResponse(context.set, 401, "Unauthorized");
+        return errorResponse(context.set, 401, "Unauthorized", [
+          {
+            code: error.code,
+            message: "Access token is missing, invalid, or expired",
+          },
+        ]);
       }
 
       throw error;
@@ -134,14 +153,25 @@ export class AuthController {
   async logout(context: AuthControllerContext) {
     const authPayload = await resolveRequestAuth(context.request, context.jwt);
     if (!authPayload) {
-      return errorResponse(context.set, 401, "Unauthorized");
+      return errorResponse(context.set, 401, "Unauthorized", [
+        {
+          code: "UNAUTHORIZED",
+          message: "Access token is missing, invalid, or expired",
+        },
+      ]);
     }
 
     const cookies = parseRequestCookies(context.request);
     const csrfHeader = context.request.headers.get("x-csrf-token");
 
     if (!isCsrfValid(cookies[csrfCookieName], csrfHeader)) {
-      return errorResponse(context.set, 403, "Invalid CSRF token");
+      return errorResponse(context.set, 403, "Invalid CSRF token", [
+        {
+          code: "INVALID_CSRF_TOKEN",
+          message: "x-csrf-token header must match CSRF-TOKEN cookie",
+          field: "x-csrf-token",
+        },
+      ]);
     }
 
     await this.authService.revokeAccessToken(authPayload);

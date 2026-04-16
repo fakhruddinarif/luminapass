@@ -10,6 +10,7 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { paymentStatusEnum } from "./enums";
 import { ticketOrders } from "./ticket-orders";
@@ -96,5 +97,15 @@ export const paymentTransactions = pgTable(
     createdAtIdx: index("payment_transactions_created_at_idx").on(
       table.createdAt,
     ),
+  }),
+);
+
+export const paymentTransactionsRelations = relations(
+  paymentTransactions,
+  ({ one }) => ({
+    order: one(ticketOrders, {
+      fields: [paymentTransactions.orderId],
+      references: [ticketOrders.id],
+    }),
   }),
 );

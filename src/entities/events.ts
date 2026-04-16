@@ -8,9 +8,15 @@ import {
   varchar,
   pgTable,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { eventStatusEnum } from "./enums";
+import { eventSections } from "./event-sections";
+import { livestreamVariants } from "./livestream-variants";
+import { streamSessions } from "./stream-sessions";
+import { ticketOrders } from "./ticket-orders";
 import { users } from "./users";
+import { waitingRoomJobs } from "./waiting-room-jobs";
 
 export const events = pgTable(
   "events",
@@ -55,3 +61,21 @@ export const events = pgTable(
     createdByIdx: index("events_created_by_idx").on(table.createdBy),
   }),
 );
+
+export const eventsRelations = relations(events, ({ many, one }) => ({
+  createdByUser: one(users, {
+    fields: [events.createdBy],
+    references: [users.id],
+    relationName: "events_created_by_user",
+  }),
+  updatedByUser: one(users, {
+    fields: [events.updatedBy],
+    references: [users.id],
+    relationName: "events_updated_by_user",
+  }),
+  sections: many(eventSections),
+  ticketOrders: many(ticketOrders),
+  waitingRoomJobs: many(waitingRoomJobs),
+  livestreamVariants: many(livestreamVariants),
+  streamSessions: many(streamSessions),
+}));

@@ -2,15 +2,22 @@ import {
   index,
   jsonb,
   numeric,
+  integer,
   pgTable,
   text,
   timestamp,
   uuid,
   varchar,
+  boolean,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { orderStatusEnum } from "./enums";
 import { events } from "./events";
+import { paymentTransactions } from "./payment-transactions";
+import { stockMovements } from "./stock-movements";
+import { ticketOrderItems } from "./ticket-order-items";
+import { ticketUnits } from "./ticket-units";
 import { users } from "./users";
 
 export const ticketOrders = pgTable(
@@ -42,6 +49,21 @@ export const ticketOrders = pgTable(
       .notNull()
       .default("mock"),
     paymentReference: varchar("payment_reference", { length: 128 }),
+    suppressTicketEmail: boolean("suppress_ticket_email")
+      .notNull()
+      .default(false),
+    ticketEmailSentAt: timestamp("ticket_email_sent_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    ticketEmailRetryCount: integer("ticket_email_retry_count")
+      .notNull()
+      .default(0),
+    ticketEmailNextRetryAt: timestamp("ticket_email_next_retry_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    ticketEmailLastError: text("ticket_email_last_error"),
     expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }),
     paidAt: timestamp("paid_at", { withTimezone: true, mode: "date" }),
     failedReason: text("failed_reason"),
@@ -63,5 +85,23 @@ export const ticketOrders = pgTable(
       table.status,
     ),
     createdAtIdx: index("ticket_orders_created_at_idx").on(table.createdAt),
+  }),
+);
+
+export const ticketOrdersRelations = relations(
+  ticketOrders,
+  ({ many, one }) => ({
+    event: one(events, {
+      fields: [ticketOrders.eventId],
+      references: [events.id],
+    }),
+    user: one(users, {
+      fields: [ticketOrders.userId],
+      references: [users.id],
+    }),
+    items: many(ticketOrderItems),
+    ticketUnits: many(ticketUnits),
+    payments: many(paymentTransactions),
+    stockMovements: many(stockMovements),
   }),
 );

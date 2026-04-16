@@ -10,9 +10,16 @@ export type EventRow = typeof events.$inferSelect;
 export type EventSectionRow = typeof eventSections.$inferSelect;
 export type StockMovementRow = typeof stockMovements.$inferSelect;
 
-export interface EventWithSections {
-  event: EventRow;
+export interface EventWithSections extends EventRow {
   sections: EventSectionRow[];
+}
+
+export interface PaginatedEventsResult {
+  items: EventWithSections[];
+  page: number;
+  size: number;
+  totalItem: number;
+  totalPage: number;
 }
 
 export interface StockOverrideResult {
@@ -34,7 +41,14 @@ export interface LiveDashboardMetrics {
 }
 
 export interface EventsRepositoryContract {
-  getEventBySlug(slug: string): Promise<EventRow | null>;
+  listEvents(
+    page: number,
+    size: number,
+    search?: string,
+    filterStatus?: string,
+  ): Promise<PaginatedEventsResult>;
+  getEventById(eventId: string): Promise<EventWithSections | null>;
+  getEventBySlug(slug: string): Promise<EventWithSections | null>;
   createEventWithSections(
     actorUserId: string,
     input: CreateEventBody,
@@ -54,6 +68,14 @@ export interface EventsRepositoryContract {
 }
 
 export interface EventsServiceContract {
+  listEvents(
+    page: number,
+    size: number,
+    search?: string,
+    filterStatus?: string,
+  ): Promise<PaginatedEventsResult>;
+  getEventById(id: string): Promise<EventWithSections>;
+  getEventBySlug(slug: string): Promise<EventWithSections>;
   createEvent(
     actorUserId: string,
     input: CreateEventBody,

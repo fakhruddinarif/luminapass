@@ -4,16 +4,16 @@ import type { InferSelectModel } from "drizzle-orm";
 import type { AccessTokenPayload, LoginBody, RegisterBody } from "../dtos/auth";
 import { accessTokenPayloadSchema } from "../dtos/auth";
 import { users } from "../entities/users";
-import {
-  userRepository,
-  type UserRepository,
-} from "../repositories/users.repository";
+import { userRepository } from "../repositories/users.repository";
 import { redis, type RedisClient } from "../config/redis";
 import {
+  type AuthServiceDependencies,
   AuthServiceError,
   type AuthServiceContract,
   type AuthenticatedUser,
   type JwtService,
+  type PasswordHasherContract,
+  type SessionStoreContract,
 } from "../interfaces/auth.interface";
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -22,30 +22,6 @@ export const authCookieName = "AUTH-TOKEN";
 export const csrfCookieName = "CSRF-TOKEN";
 
 type DbUser = InferSelectModel<typeof users>;
-
-interface SessionStore {
-  set(key: string, value: string, ttlSeconds: number): Promise<void>;
-  exists(key: string): Promise<boolean>;
-  delete(key: string): Promise<void>;
-}
-
-interface PasswordHasher {
-  hash(value: string): Promise<string>;
-  verify(value: string, hash: string): Promise<boolean>;
-}
-
-interface AuthServiceDependencies {
-  userRepository: Pick<
-    UserRepository,
-    | "create"
-    | "findUserByEmail"
-    | "findUserByEmailOrUsername"
-    | "findUserById"
-    | "updateLastLoginAt"
-  >;
-  sessionStore: SessionStore;
-  passwordHasher: PasswordHasher;
-}
 
 function buildSessionKey(jti: string): string {
   return `auth:session:${jti}`;
@@ -228,7 +204,7 @@ export class AuthService implements AuthServiceContract {
   }
 }
 
-function createRedisSessionStore(client: RedisClient): SessionStore {
+function createRedisSessionStore(client: RedisClient): SessionStoreContract {
   return {
     async set(key: string, value: string, ttlSeconds: number) {
       await client.set(key, value, "EX", ttlSeconds);
@@ -242,7 +218,7 @@ function createRedisSessionStore(client: RedisClient): SessionStore {
   };
 }
 
-const bunPasswordHasher: PasswordHasher = {
+const bunPasswordHasher: PasswordHasherContract = {
   async hash(value: string) {
     return Bun.password.hash(value, {
       algorithm: "argon2id",

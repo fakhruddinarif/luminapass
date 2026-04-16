@@ -4,6 +4,7 @@ import { EventsController } from "../controllers/events.controller";
 import {
   createEventBodySchema,
   liveDashboardQuerySchema,
+  listEventsQuerySchema,
   stockOverrideBodySchema,
   updateEventBodySchema,
 } from "../dtos/admin";
@@ -35,6 +36,62 @@ function parseJwt(context: unknown): JwtService {
 const eventsController = new EventsController(eventsService);
 
 export const eventsRoutes = new Elysia({ prefix: "/api" })
+
+  .get("/events", async (context) => {
+    const { set, request, query } = context as unknown as RouteContextBase;
+    const jwt = parseJwt(context);
+
+    const parsed = listEventsQuerySchema.safeParse(query ?? {});
+    if (!parsed.success) {
+      return errorResponse(
+        set,
+        400,
+        "Invalid events query parameters",
+        parsed.error.issues,
+      );
+    }
+
+    return eventsController.listEvents(parsed.data, {
+      set,
+      request,
+      jwt,
+    });
+  })
+  .get("/events/id/:eventId", async (context) => {
+    const { set, request, params } = context as unknown as RouteContextBase;
+    const jwt = parseJwt(context);
+
+    const eventId = params.eventId;
+    if (!eventId) {
+      return errorResponse(set, 400, "eventId is required", [
+        {
+          code: "MISSING_PARAM",
+          message: "Route parameter eventId was not provided",
+          field: "eventId",
+        },
+      ]);
+    }
+
+    return eventsController.getEventById(eventId, { set, request, jwt });
+  })
+  .get("/events/slug/:slug", async (context) => {
+    const { set, request, params } = context as unknown as RouteContextBase;
+    const jwt = parseJwt(context);
+
+    const slug = params.slug;
+    if (!slug) {
+      return errorResponse(set, 400, "slug is required", [
+        {
+          code: "MISSING_PARAM",
+          message: "Route parameter slug was not provided",
+          field: "slug",
+        },
+      ]);
+    }
+
+    return eventsController.getEventBySlug(slug, { set, request, jwt });
+  })
+
   .post("/events", async (context) => {
     const { body, set, request } = context as unknown as RouteContextBase;
     const jwt = parseJwt(context);

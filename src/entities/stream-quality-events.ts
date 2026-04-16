@@ -1,4 +1,5 @@
 import { index, integer, pgTable, timestamp, uuid } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { streamResolutionEnum } from "./enums";
 import { streamSessions } from "./stream-sessions";
@@ -25,5 +26,15 @@ export const streamQualityEvents = pgTable(
     sessionSwitchedAtIdx: index(
       "stream_quality_events_session_switched_at_idx",
     ).on(table.streamSessionId, table.switchedAt),
+  }),
+);
+
+export const streamQualityEventsRelations = relations(
+  streamQualityEvents,
+  ({ one }) => ({
+    streamSession: one(streamSessions, {
+      fields: [streamQualityEvents.streamSessionId],
+      references: [streamSessions.id],
+    }),
   }),
 );

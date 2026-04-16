@@ -19,8 +19,18 @@ describe("TicketOrdersService", () => {
   it("creates ticket order successfully", async () => {
     const repository = {
       createTicketOrder: async () => ({
-        order: { id: "order-1" },
+        id: "order-1",
         items: [{ id: "item-1" }],
+        event: null,
+        user: null,
+        payments: [],
+      }),
+      listTicketOrders: async () => ({
+        items: [],
+        page: 1,
+        size: 10,
+        totalItem: 0,
+        totalPage: 1,
       }),
       getTicketOrderById: async () => null,
     };
@@ -28,23 +38,33 @@ describe("TicketOrdersService", () => {
     const service = new TicketOrdersService(repository as any);
     const result = await service.createTicketOrder("user-1", orderInput);
 
-    expect(result.order).toBeDefined();
-    expect(result.items).toHaveLength(1);
+    expect(result.id).toBeDefined();
+    expect(Array.isArray(result.payments)).toBe(true);
   });
 
   it("throws ORDER_NOT_FOUND when reading missing order", async () => {
     const repository = {
       createTicketOrder: async () => ({
-        order: { id: "order-1" },
+        id: "order-1",
         items: [],
+        event: null,
+        user: null,
+        payments: [],
+      }),
+      listTicketOrders: async () => ({
+        items: [],
+        page: 1,
+        size: 10,
+        totalItem: 0,
+        totalPage: 1,
       }),
       getTicketOrderById: async () => null,
     };
 
     const service = new TicketOrdersService(repository as any);
 
-    await expect(
-      service.getTicketOrderById("missing-id"),
+    return expect(
+      service.getTicketOrderById("missing-id", "user-1", "customer"),
     ).rejects.toBeInstanceOf(TicketOrdersServiceError);
   });
 
@@ -53,15 +73,46 @@ describe("TicketOrdersService", () => {
       createTicketOrder: async () => {
         throw new Error("EVENT_NOT_FOUND");
       },
+      listTicketOrders: async () => ({
+        items: [],
+        page: 1,
+        size: 10,
+        totalItem: 0,
+        totalPage: 1,
+      }),
       getTicketOrderById: async () => null,
     };
 
     const service = new TicketOrdersService(repository as any);
 
-    await expect(
+    return expect(
       service.createTicketOrder("user-1", orderInput),
     ).rejects.toMatchObject({
       code: "EVENT_NOT_FOUND",
+    });
+  });
+
+  it("maps event-not-on-sale errors", async () => {
+    const repository = {
+      createTicketOrder: async () => {
+        throw new Error("EVENT_NOT_ON_SALE");
+      },
+      listTicketOrders: async () => ({
+        items: [],
+        page: 1,
+        size: 10,
+        totalItem: 0,
+        totalPage: 1,
+      }),
+      getTicketOrderById: async () => null,
+    };
+
+    const service = new TicketOrdersService(repository as any);
+
+    return expect(
+      service.createTicketOrder("user-1", orderInput),
+    ).rejects.toMatchObject({
+      code: "EVENT_NOT_ON_SALE",
     });
   });
 });

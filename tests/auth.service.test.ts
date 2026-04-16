@@ -23,19 +23,18 @@ describe("AuthService", () => {
   function makeService(overrides?: {
     findUserByEmailOrUsername?: () => Promise<typeof baseUser | undefined>;
     findUserByEmail?: () => Promise<typeof baseUser | undefined>;
+    findUserByUsername?: () => Promise<typeof baseUser | undefined>;
     findUserById?: () => Promise<typeof baseUser | undefined>;
   }) {
     const userRepository = {
       findUserByEmailOrUsername:
         overrides?.findUserByEmailOrUsername ?? (async () => undefined),
       findUserByEmail: overrides?.findUserByEmail ?? (async () => baseUser),
+      findUserByUsername:
+        overrides?.findUserByUsername ?? (async () => undefined),
       findUserById: overrides?.findUserById ?? (async () => baseUser),
       create: async () => baseUser,
-      update: async () => baseUser,
       updateLastLoginAt: async () => {},
-      getById: async () => baseUser,
-      delete: async () => true,
-      softDelete: async () => true,
     };
 
     const sessionStore = {
@@ -94,6 +93,7 @@ describe("AuthService", () => {
       userRepository: {
         findUserByEmailOrUsername: async () => undefined,
         findUserByEmail: async () => baseUser,
+        findUserByUsername: async () => undefined,
         findUserById: async () => baseUser,
         create: async () => baseUser,
         updateLastLoginAt: async () => {},

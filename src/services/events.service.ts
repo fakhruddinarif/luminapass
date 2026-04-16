@@ -1,5 +1,3 @@
-import { DatabaseError } from "pg";
-
 import type {
   CreateEventBody,
   LiveDashboardQuery,
@@ -8,8 +6,10 @@ import type {
 } from "../dtos/admin";
 import {
   EventsServiceError,
+  type EventWithSections,
   type EventsRepositoryContract,
   type EventsServiceContract,
+  type PaginatedEventsResult,
 } from "../interfaces/events.interface";
 import { eventsRepository } from "../repositories/events.repository";
 
@@ -38,15 +38,34 @@ function validateEventTimeRange(input: {
   }
 }
 
+function extractDatabaseErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    cause?: unknown;
+  };
+
+  if (typeof candidate.code === "string") {
+    return candidate.code;
+  }
+
+  return extractDatabaseErrorCode(candidate.cause);
+}
+
 function mapDatabaseError(error: unknown): never {
-  if (error instanceof DatabaseError && error.code === "23505") {
+  const errorCode = extractDatabaseErrorCode(error);
+
+  if (errorCode === "23505") {
     throw new EventsServiceError(
       "EVENT_SLUG_EXISTS",
       "Event slug already exists",
     );
   }
 
-  if (error instanceof DatabaseError && error.code === "23503") {
+  if (errorCode === "23503") {
     throw new EventsServiceError(
       "DATABASE_ERROR",
       "Related record was not found for this operation",
@@ -58,6 +77,64 @@ function mapDatabaseError(error: unknown): never {
 
 export class EventsService implements EventsServiceContract {
   constructor(private readonly repository: EventsRepositoryContract) {}
+
+  async listEvents(
+    page: number,
+    size: number,
+    search?: string,
+    filterStatus?: string,
+  ): Promise<PaginatedEventsResult> {
+    try {
+      return await this.repository.listEvents(page, size, search, filterStatus);
+    } catch (err) {
+      if (err instanceof EventsServiceError) {
+        throw err;
+      }
+
+      throw new EventsServiceError(
+        "DATABASE_ERROR",
+        "A database error occurred while listing events",
+      );
+    }
+  }
+
+  async getEventById(id: string): Promise<EventWithSections> {
+    try {
+      const event = await this.repository.getEventById(id);
+      if (!event) {
+        throw new EventsServiceError("EVENT_NOT_FOUND", "Event was not found");
+      }
+
+      return event;
+    } catch (error) {
+      if (error instanceof EventsServiceError) {
+        throw error;
+      }
+
+      if (extractDatabaseErrorCode(error) === "22P02") {
+        throw new EventsServiceError("EVENT_NOT_FOUND", "Event was not found");
+      }
+
+      mapDatabaseError(error);
+    }
+  }
+
+  async getEventBySlug(slug: string): Promise<EventWithSections> {
+    try {
+      const event = await this.repository.getEventBySlug(slug);
+      if (!event) {
+        throw new EventsServiceError("EVENT_NOT_FOUND", "Event was not found");
+      }
+
+      return event;
+    } catch (error) {
+      if (error instanceof EventsServiceError) {
+        throw error;
+      }
+
+      mapDatabaseError(error);
+    }
+  }
 
   async createEvent(actorUserId: string, input: CreateEventBody) {
     validateEventTimeRange(input);

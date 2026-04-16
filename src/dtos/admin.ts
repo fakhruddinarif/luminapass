@@ -50,8 +50,26 @@ export const liveDashboardQuerySchema = z.object({
   topResolutionLimit: z.coerce.number().int().min(1).max(10).optional(),
 });
 
+export const listEventsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  size: z.coerce.number().int().min(1).max(100).default(10),
+  search: z.string().trim().min(1).optional(),
+  filter_status: z
+    .enum([
+      "draft",
+      "published",
+      "on_sale",
+      "sold_out",
+      "live",
+      "finished",
+      "cancelled",
+    ])
+    .optional(),
+});
+
 export type EventSectionInput = z.infer<typeof eventSectionInputSchema>;
 export type CreateEventBody = z.infer<typeof createEventBodySchema>;
 export type UpdateEventBody = z.infer<typeof updateEventBodySchema>;
 export type StockOverrideBody = z.infer<typeof stockOverrideBodySchema>;
 export type LiveDashboardQuery = z.infer<typeof liveDashboardQuerySchema>;
+export type ListEventsQuery = z.infer<typeof listEventsQuerySchema>;

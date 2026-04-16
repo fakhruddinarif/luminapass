@@ -31,7 +31,7 @@ function normalizeErrors(input: unknown): ApiErrorDetail[] | null {
 
   if (Array.isArray(input)) {
     const mapped = input
-      .map((item, index): ApiErrorDetail | null => {
+      .map((item): ApiErrorDetail | null => {
         if (typeof item === "string") {
           return {
             code: "ERROR",
@@ -61,14 +61,12 @@ function normalizeErrors(input: unknown): ApiErrorDetail[] | null {
                   : typeof row.field === "string"
                     ? row.field
                     : undefined,
-            details: row,
           };
         }
 
         return {
           code: "ERROR",
           message: "Terjadi kesalahan",
-          details: { index, value: item },
         };
       })
       .filter((entry): entry is ApiErrorDetail => entry !== null);
@@ -85,7 +83,6 @@ function normalizeErrors(input: unknown): ApiErrorDetail[] | null {
         message:
           typeof row.message === "string" ? row.message : "Terjadi kesalahan",
         field: typeof row.field === "string" ? row.field : undefined,
-        details: row,
       },
     ];
   }

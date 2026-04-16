@@ -8,8 +8,11 @@ import {
   integer,
   pgTable,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { events } from "./events";
+import { stockMovements } from "./stock-movements";
+import { ticketOrderItems } from "./ticket-order-items";
 
 export const eventSections = pgTable(
   "event_sections",
@@ -35,5 +38,17 @@ export const eventSections = pgTable(
       table.eventId,
       table.code,
     ),
+  }),
+);
+
+export const eventSectionsRelations = relations(
+  eventSections,
+  ({ many, one }) => ({
+    event: one(events, {
+      fields: [eventSections.eventId],
+      references: [events.id],
+    }),
+    ticketOrderItems: many(ticketOrderItems),
+    stockMovements: many(stockMovements),
   }),
 );

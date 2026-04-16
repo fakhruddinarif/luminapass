@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
     "loadtest:10k": "k6 run tests/load/k6-10k-concurrency.js",
@@ -15,6 +15,7 @@
   "devDependencies": {
     "@types/amqplib": "^0.10.8",
     "@types/bun": "latest",
+    "@types/nodemailer": "^8.0.0",
     "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10"
   },
@@ -26,10 +27,12 @@
     "@elysiajs/jwt": "^1.4.1",
     "@elysiajs/swagger": "^1.3.1",
     "amqplib": "^1.0.3",
+    "bwip-js": "^4.9.2",
     "drizzle-orm": "^0.45.2",
     "elysia": "^1.4.28",
     "fluent-ffmpeg": "^2.1.3",
     "ioredis": "^5.10.1",
+    "nodemailer": "^8.0.5",
     "pg": "^8.20.0",
     "redlock": "^5.0.0-beta.2",
     "zod": "^4.3.6"

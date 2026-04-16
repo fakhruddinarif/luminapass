@@ -7,6 +7,7 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { queueStatusEnum } from "./enums";
 import { events } from "./events";
@@ -52,5 +53,19 @@ export const waitingRoomJobs = pgTable(
       table.status,
     ),
     queuedAtIdx: index("waiting_room_jobs_queued_at_idx").on(table.queuedAt),
+  }),
+);
+
+export const waitingRoomJobsRelations = relations(
+  waitingRoomJobs,
+  ({ one }) => ({
+    event: one(events, {
+      fields: [waitingRoomJobs.eventId],
+      references: [events.id],
+    }),
+    user: one(users, {
+      fields: [waitingRoomJobs.userId],
+      references: [users.id],
+    }),
   }),
 );

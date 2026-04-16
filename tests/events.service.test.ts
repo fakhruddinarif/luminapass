@@ -30,8 +30,122 @@ function buildCreateEventInput(): CreateEventBody {
 }
 
 describe("EventsService", () => {
+  it("returns events list with sections", async () => {
+    const repository = {
+      listEvents: async () => ({
+        items: [{ id: "event-1", sections: [{ id: "section-1" }] }],
+        page: 1,
+        size: 10,
+        totalItem: 1,
+        totalPage: 1,
+      }),
+      getEventById: async () => null,
+      createEventWithSections: async () => ({ ok: true }),
+      updateEvent: async () => ({ ok: true }),
+      getEventBySlug: async () => null,
+      overrideSectionCapacity: async () => ({ ok: true }),
+      getLiveDashboard: async () => ({
+        waitingUsers: 1,
+        soldTickets: 2,
+        activeViewers: 3,
+        totalCapacity: 4,
+        topResolutions: [],
+      }),
+    };
+
+    const service = new EventsService(repository as any);
+    const result = await service.listEvents(1, 10, "konser");
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.sections).toHaveLength(1);
+    expect(result.totalItem).toBe(1);
+  });
+
+  it("returns event detail by id", async () => {
+    const repository = {
+      listEvents: async () => [],
+      getEventById: async () => ({
+        id: "event-1",
+        slug: "event-1",
+        sections: [],
+      }),
+      createEventWithSections: async () => ({ ok: true }),
+      updateEvent: async () => ({ ok: true }),
+      getEventBySlug: async () => null,
+      overrideSectionCapacity: async () => ({ ok: true }),
+      getLiveDashboard: async () => ({
+        waitingUsers: 0,
+        soldTickets: 0,
+        activeViewers: 0,
+        totalCapacity: 0,
+        topResolutions: [],
+      }),
+    };
+
+    const service = new EventsService(repository as any);
+    const result = await service.getEventById("event-1");
+
+    expect(result.id).toBe("event-1");
+  });
+
+  it("throws EVENT_NOT_FOUND when getEventById receives invalid uuid error", async () => {
+    const repository = {
+      listEvents: async () => [],
+      getEventById: async () => {
+        throw new Error("Failed query", {
+          cause: {
+            code: "22P02",
+          },
+        });
+      },
+      createEventWithSections: async () => ({ ok: true }),
+      updateEvent: async () => ({ ok: true }),
+      getEventBySlug: async () => null,
+      overrideSectionCapacity: async () => ({ ok: true }),
+      getLiveDashboard: async () => ({
+        waitingUsers: 0,
+        soldTickets: 0,
+        activeViewers: 0,
+        totalCapacity: 0,
+        topResolutions: [],
+      }),
+    };
+
+    const service = new EventsService(repository as any);
+
+    await expect(service.getEventById("21")).rejects.toMatchObject({
+      code: "EVENT_NOT_FOUND",
+    });
+  });
+
+  it("throws EVENT_NOT_FOUND when event detail by slug is missing", async () => {
+    const repository = {
+      listEvents: async () => [],
+      getEventById: async () => null,
+      createEventWithSections: async () => ({ ok: true }),
+      updateEvent: async () => ({ ok: true }),
+      getEventBySlug: async () => null,
+      overrideSectionCapacity: async () => ({ ok: true }),
+      getLiveDashboard: async () => ({
+        waitingUsers: 0,
+        soldTickets: 0,
+        activeViewers: 0,
+        totalCapacity: 0,
+        topResolutions: [],
+      }),
+    };
+
+    const service = new EventsService(repository as any);
+
+    await expect(service.getEventBySlug("missing-slug")).rejects.toMatchObject({
+      code: "EVENT_NOT_FOUND",
+    });
+  });
+
   it("creates event with valid time range", async () => {
     const repository = {
+      listEvents: async () => [],
+      getEventById: async () => null,
       createEventWithSections: async () => ({ ok: true }),
       updateEvent: async () => ({ ok: true }),
       getEventBySlug: async () => null,
@@ -56,6 +170,8 @@ describe("EventsService", () => {
 
   it("throws INVALID_TIME_RANGE when event ends before start", async () => {
     const repository = {
+      listEvents: async () => [],
+      getEventById: async () => null,
       createEventWithSections: async () => ({ ok: true }),
       updateEvent: async () => ({ ok: true }),
       getEventBySlug: async () => null,
@@ -83,6 +199,8 @@ describe("EventsService", () => {
 
   it("throws EVENT_NOT_FOUND when update target does not exist", async () => {
     const repository = {
+      listEvents: async () => [],
+      getEventById: async () => null,
       createEventWithSections: async () => ({ ok: true }),
       updateEvent: async () => null,
       getEventBySlug: async () => null,
@@ -107,6 +225,8 @@ describe("EventsService", () => {
 
   it("throws INVALID_STOCK_OVERRIDE when resulting capacity is negative", async () => {
     const repository = {
+      listEvents: async () => [],
+      getEventById: async () => null,
       createEventWithSections: async () => ({ ok: true }),
       updateEvent: async () => ({ ok: true }),
       getEventBySlug: async () => null,
@@ -136,6 +256,8 @@ describe("EventsService", () => {
 
   it("returns live dashboard metrics", async () => {
     const repository = {
+      listEvents: async () => [],
+      getEventById: async () => null,
       createEventWithSections: async () => ({ ok: true }),
       updateEvent: async () => ({ ok: true }),
       getEventBySlug: async () => null,
@@ -164,6 +286,8 @@ describe("EventsService", () => {
 
   it("maps non-domain errors into EventsServiceError", async () => {
     const repository = {
+      listEvents: async () => [],
+      getEventById: async () => null,
       createEventWithSections: async () => {
         throw new Error("random failure");
       },

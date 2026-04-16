@@ -6,6 +6,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 import { stockMovementTypeEnum } from "./enums";
 import { eventSections } from "./event-sections";
@@ -45,3 +46,18 @@ export const stockMovements = pgTable(
     orderIdx: index("stock_movements_order_idx").on(table.orderId),
   }),
 );
+
+export const stockMovementsRelations = relations(stockMovements, ({ one }) => ({
+  eventSection: one(eventSections, {
+    fields: [stockMovements.eventSectionId],
+    references: [eventSections.id],
+  }),
+  order: one(ticketOrders, {
+    fields: [stockMovements.orderId],
+    references: [ticketOrders.id],
+  }),
+  actorUser: one(users, {
+    fields: [stockMovements.actorUserId],
+    references: [users.id],
+  }),
+}));
