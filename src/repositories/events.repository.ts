@@ -1,6 +1,7 @@
 import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 
 import { db } from "../config/db";
+import type { LiveDashboardQuery } from "../dtos/admin";
 import {
   eventSections,
   eventStatusEnum,
@@ -10,7 +11,6 @@ import {
   waitingRoomJobs,
 } from "../entities";
 import type {
-  EventsRepositoryContract,
   LiveDashboardMetrics,
   TopResolutionMetric,
 } from "../interfaces/events.interface";
@@ -21,6 +21,8 @@ function toNullableDate(date?: Date): Date | null {
 }
 
 type EventStatus = (typeof eventStatusEnum.enumValues)[number];
+type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type DbExecutor = typeof db | DbTx;
 
 function parseEventStatus(input?: string): EventStatus | undefined {
   if (!input) {
@@ -44,8 +46,16 @@ const AUTO_MANAGED_EVENT_STATUSES: EventStatus[] = [
   "finished",
 ];
 
-async function getSectionStatsByEventId(tx: any, eventId: string) {
-  const [row] = await tx
+function useExecutor(executor?: DbExecutor): DbExecutor {
+  return executor ?? db;
+}
+
+export async function getSectionStatsByEventId(
+  eventId: string,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  const [row] = await orm
     .select({
       sectionCount: sql<number>`cast(count(*) as int)`,
       totalCapacity: sql<number>`coalesce(cast(sum(${eventSections.capacity}) as int), 0)`,
@@ -59,20 +69,143 @@ async function getSectionStatsByEventId(tx: any, eventId: string) {
   };
 }
 
-export async function synchronizeEventStatusTx(
-  tx: any,
-  eventId: string,
-  now = new Date(),
-): Promise<EventStatusSyncResult> {
-  const event = await tx.query.events.findFirst({
+export async function getEventByIdTx(eventId: string, executor?: DbExecutor) {
+  const orm = useExecutor(executor);
+  return orm.query.events.findFirst({
     where: eq(events.id, eventId),
   });
+}
+
+export async function getEventBySlugTx(slug: string, executor?: DbExecutor) {
+  const orm = useExecutor(executor);
+  return orm.query.events.findFirst({
+    where: eq(events.slug, slug),
+    with: {
+      sections: true,
+    },
+  });
+}
+
+export async function insertEventTx(
+  payload: typeof events.$inferInsert,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  const [createdEvent] = await orm.insert(events).values(payload).returning();
+  return createdEvent ?? null;
+}
+
+export async function insertEventSectionsTx(
+  payload: Array<typeof eventSections.$inferInsert>,
+  executor?: DbExecutor,
+) {
+  if (payload.length === 0) {
+    return [] as Array<typeof eventSections.$inferSelect>;
+  }
+
+  const orm = useExecutor(executor);
+  return orm.insert(eventSections).values(payload).returning();
+}
+
+export async function updateEventByIdTx(
+  eventId: string,
+  payload: Partial<typeof events.$inferInsert>,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  const [updated] = await orm
+    .update(events)
+    .set(payload)
+    .where(eq(events.id, eventId))
+    .returning();
+
+  return updated ?? null;
+}
+
+export async function findEventSectionTx(
+  eventId: string,
+  sectionId: string,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  return orm.query.eventSections.findFirst({
+    where: and(
+      eq(eventSections.id, sectionId),
+      eq(eventSections.eventId, eventId),
+    ),
+  });
+}
+
+export async function updateEventSectionCapacityTx(
+  sectionId: string,
+  nextCapacity: number,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  const [updatedSection] = await orm
+    .update(eventSections)
+    .set({
+      capacity: nextCapacity,
+      updatedAt: new Date(),
+    })
+    .where(eq(eventSections.id, sectionId))
+    .returning();
+
+  return updatedSection ?? null;
+}
+
+export async function insertStockMovementTx(
+  payload: typeof stockMovements.$inferInsert,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  const [movement] = await orm
+    .insert(stockMovements)
+    .values(payload)
+    .returning();
+  return movement ?? null;
+}
+
+export async function listAutoManagedEventsTx(
+  limit = 200,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  return orm.query.events.findMany({
+    where: inArray(events.status, AUTO_MANAGED_EVENT_STATUSES),
+    limit,
+    orderBy: desc(events.updatedAt),
+  });
+}
+
+export async function setEventStatusTx(
+  eventId: string,
+  status: EventStatus,
+  now = new Date(),
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  await orm
+    .update(events)
+    .set({
+      status,
+      updatedAt: now,
+    })
+    .where(eq(events.id, eventId));
+}
+
+export async function synchronizeEventStatusTx(
+  eventId: string,
+  now = new Date(),
+  executor?: DbExecutor,
+): Promise<EventStatusSyncResult> {
+  const event = await getEventByIdTx(eventId, executor);
 
   if (!event) {
     return "not_found";
   }
 
-  const sectionStats = await getSectionStatsByEventId(tx, eventId);
+  const sectionStats = await getSectionStatsByEventId(eventId, executor);
 
   const nextStatus = resolveEventLifecycleStatus({
     currentStatus: event.status,
@@ -89,13 +222,7 @@ export async function synchronizeEventStatusTx(
     return "unchanged";
   }
 
-  await tx
-    .update(events)
-    .set({
-      status: nextStatus,
-      updatedAt: now,
-    })
-    .where(eq(events.id, eventId));
+  await setEventStatusTx(eventId, nextStatus, now, executor);
 
   return "updated";
 }
@@ -104,36 +231,38 @@ export async function synchronizeEventStatus(
   eventId: string,
   now = new Date(),
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    await synchronizeEventStatusTx(tx, eventId, now);
-  });
+  await synchronizeEventStatusTx(eventId, now);
 }
 
 export async function synchronizeAutoEventStatuses(
   limit = 200,
 ): Promise<number> {
-  return db.transaction(async (tx) => {
-    const candidates = await tx.query.events.findMany({
-      where: inArray(events.status, AUTO_MANAGED_EVENT_STATUSES),
-      limit,
-      orderBy: desc(events.updatedAt),
-    });
+  const candidates = await listAutoManagedEventsTx(limit);
+  const now = new Date();
+  let updatedCount = 0;
 
-    const now = new Date();
-    let updatedCount = 0;
-
-    for (const event of candidates) {
-      const result = await synchronizeEventStatusTx(tx, event.id, now);
-      if (result === "updated") {
-        updatedCount += 1;
-      }
+  for (const event of candidates) {
+    const result = await synchronizeEventStatusTx(event.id, now);
+    if (result === "updated") {
+      updatedCount += 1;
     }
+  }
 
-    return updatedCount;
-  });
+  return updatedCount;
 }
 
-export const eventsRepository: EventsRepositoryContract = {
+export const eventsRepository = {
+  getEventByIdTx,
+  getEventBySlugTx,
+  insertEventTx,
+  insertEventSectionsTx,
+  updateEventByIdTx,
+  findEventSectionTx,
+  updateEventSectionCapacityTx,
+  insertStockMovementTx,
+  listAutoManagedEventsTx,
+  synchronizeEventStatusTx,
+
   async listEvents(
     page: number,
     size: number,
@@ -201,7 +330,7 @@ export const eventsRepository: EventsRepositoryContract = {
     };
   },
 
-  async getEventById(eventId) {
+  async getEventById(eventId: string) {
     const eventWithSections = await db.query.events.findFirst({
       where: eq(events.id, eventId),
       with: {
@@ -216,186 +345,11 @@ export const eventsRepository: EventsRepositoryContract = {
     return eventWithSections;
   },
 
-  async getEventBySlug(slug) {
-    const eventWithSections = await db.query.events.findFirst({
-      where: eq(events.slug, slug),
-      with: {
-        sections: true,
-      },
-    });
-
-    if (!eventWithSections) {
-      return null;
-    }
-
-    return eventWithSections;
+  async getEventBySlug(slug: string) {
+    return getEventBySlugTx(slug);
   },
 
-  async createEventWithSections(actorUserId, input) {
-    return db.transaction(async (tx) => {
-      const [createdEvent] = await tx
-        .insert(events)
-        .values({
-          slug: input.slug,
-          name: input.name,
-          description: input.description,
-          venueName: input.venueName,
-          venueCity: input.venueCity,
-          venueAddress: input.venueAddress,
-          startsAt: input.startsAt,
-          endsAt: toNullableDate(input.endsAt),
-          saleStartsAt: input.saleStartsAt,
-          saleEndsAt: toNullableDate(input.saleEndsAt),
-          status: input.status ?? "draft",
-          coverImageUrl: input.coverImageUrl,
-          livestreamEnabled: input.livestreamEnabled ?? false,
-          createdBy: actorUserId,
-          updatedBy: actorUserId,
-        })
-        .returning();
-
-      if (!createdEvent) {
-        throw new Error("EVENT_INSERT_FAILED");
-      }
-
-      const createdSections =
-        input.sections.length > 0
-          ? await tx
-              .insert(eventSections)
-              .values(
-                input.sections.map((section) => ({
-                  eventId: createdEvent.id,
-                  code: section.code,
-                  name: section.name,
-                  description: section.description,
-                  price: section.price.toFixed(2),
-                  capacity: section.capacity,
-                })),
-              )
-              .returning()
-          : [];
-
-      await synchronizeEventStatusTx(tx, createdEvent.id);
-
-      const refreshedEvent = await tx.query.events.findFirst({
-        where: eq(events.id, createdEvent.id),
-      });
-
-      if (!refreshedEvent) {
-        throw new Error("EVENT_NOT_FOUND");
-      }
-
-      return {
-        ...refreshedEvent,
-        sections: createdSections,
-      };
-    });
-  },
-
-  async updateEvent(eventId, actorUserId, input) {
-    return db.transaction(async (tx) => {
-      const updatePayload = Object.fromEntries(
-        Object.entries({
-          slug: input.slug,
-          name: input.name,
-          description: input.description,
-          venueName: input.venueName,
-          venueCity: input.venueCity,
-          venueAddress: input.venueAddress,
-          startsAt: input.startsAt,
-          endsAt: input.endsAt,
-          saleStartsAt: input.saleStartsAt,
-          saleEndsAt: input.saleEndsAt,
-          status: input.status,
-          coverImageUrl: input.coverImageUrl,
-          livestreamEnabled: input.livestreamEnabled,
-        }).filter(([, value]) => value !== undefined),
-      );
-
-      const [updated] = await tx
-        .update(events)
-        .set({
-          ...updatePayload,
-          updatedBy: actorUserId,
-          updatedAt: new Date(),
-        })
-        .where(eq(events.id, eventId))
-        .returning();
-
-      if (!updated) {
-        return null;
-      }
-
-      await synchronizeEventStatusTx(tx, eventId);
-
-      const refreshed = await tx.query.events.findFirst({
-        where: eq(events.id, eventId),
-      });
-
-      return refreshed ?? updated;
-    });
-  },
-
-  async overrideSectionCapacity(eventId, sectionId, actorUserId, input) {
-    return db.transaction(async (tx) => {
-      const section = await tx.query.eventSections.findFirst({
-        where: and(
-          eq(eventSections.id, sectionId),
-          eq(eventSections.eventId, eventId),
-        ),
-      });
-
-      if (!section) {
-        return null;
-      }
-
-      const delta = input.action === "add" ? input.quantity : -input.quantity;
-      const nextCapacity = section.capacity + delta;
-
-      if (nextCapacity < 0) {
-        throw new Error("NEGATIVE_CAPACITY");
-      }
-
-      const [updatedSection] = await tx
-        .update(eventSections)
-        .set({
-          capacity: nextCapacity,
-          updatedAt: new Date(),
-        })
-        .where(eq(eventSections.id, section.id))
-        .returning();
-
-      if (!updatedSection) {
-        throw new Error("SECTION_UPDATE_FAILED");
-      }
-
-      const [movement] = await tx
-        .insert(stockMovements)
-        .values({
-          eventSectionId: section.id,
-          actorUserId,
-          movementType: input.action === "add" ? "admin_add" : "admin_withdraw",
-          quantity: delta,
-          stockBefore: section.capacity,
-          stockAfter: nextCapacity,
-          reason: input.reason,
-        })
-        .returning();
-
-      if (!movement) {
-        throw new Error("MOVEMENT_INSERT_FAILED");
-      }
-
-      await synchronizeEventStatusTx(tx, eventId);
-
-      return {
-        section: updatedSection,
-        movement,
-      };
-    });
-  },
-
-  async getLiveDashboard(query) {
+  async getLiveDashboard(query: LiveDashboardQuery) {
     const waitingFilter = query.eventId
       ? and(
           eq(waitingRoomJobs.eventId, query.eventId),

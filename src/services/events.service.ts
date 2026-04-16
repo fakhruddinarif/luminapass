@@ -4,10 +4,10 @@ import type {
   StockOverrideBody,
   UpdateEventBody,
 } from "../dtos/admin";
+import { db } from "../config/db";
 import {
   EventsServiceError,
   type EventWithSections,
-  type EventsRepositoryContract,
   type EventsServiceContract,
   type PaginatedEventsResult,
 } from "../interfaces/events.interface";
@@ -76,7 +76,7 @@ function mapDatabaseError(error: unknown): never {
 }
 
 export class EventsService implements EventsServiceContract {
-  constructor(private readonly repository: EventsRepositoryContract) {}
+  constructor(private readonly repository: typeof eventsRepository) {}
 
   async listEvents(
     page: number,
@@ -140,8 +140,7 @@ export class EventsService implements EventsServiceContract {
     validateEventTimeRange(input);
 
     try {
-      // Check slug uniqueness and create event with sections in a transaction
-      const existingEvent = await this.repository.getEventBySlug(input.slug);
+      const existingEvent = await this.repository.getEventBySlugTx(input.slug);
       if (existingEvent) {
         throw new EventsServiceError(
           "EVENT_SLUG_EXISTS",
@@ -149,7 +148,63 @@ export class EventsService implements EventsServiceContract {
         );
       }
 
-      return await this.repository.createEventWithSections(actorUserId, input);
+      return await db.transaction(async (tx) => {
+        const createdEvent = await this.repository.insertEventTx(
+          {
+            slug: input.slug,
+            name: input.name,
+            description: input.description,
+            venueName: input.venueName,
+            venueCity: input.venueCity,
+            venueAddress: input.venueAddress,
+            startsAt: input.startsAt,
+            endsAt: input.endsAt ?? null,
+            saleStartsAt: input.saleStartsAt,
+            saleEndsAt: input.saleEndsAt ?? null,
+            status: input.status ?? "draft",
+            coverImageUrl: input.coverImageUrl,
+            livestreamEnabled: input.livestreamEnabled ?? false,
+            createdBy: actorUserId,
+            updatedBy: actorUserId,
+          },
+          tx,
+        );
+
+        if (!createdEvent) {
+          throw new Error("EVENT_INSERT_FAILED");
+        }
+
+        const createdSections = await this.repository.insertEventSectionsTx(
+          input.sections.map((section) => ({
+            eventId: createdEvent.id,
+            code: section.code,
+            name: section.name,
+            description: section.description,
+            price: section.price.toFixed(2),
+            capacity: section.capacity,
+          })),
+          tx,
+        );
+
+        await this.repository.synchronizeEventStatusTx(
+          createdEvent.id,
+          new Date(),
+          tx,
+        );
+
+        const refreshedEvent = await this.repository.getEventByIdTx(
+          createdEvent.id,
+          tx,
+        );
+        if (!refreshedEvent) {
+          throw new Error("EVENT_NOT_FOUND");
+        }
+
+        return {
+          ...refreshedEvent,
+          sections: createdSections,
+        };
+      });
     } catch (error) {
       if (error instanceof EventsServiceError) {
         throw error;
@@ -167,16 +222,47 @@ export class EventsService implements EventsServiceContract {
     validateEventTimeRange(input);
 
     try {
-      const updated = await this.repository.updateEvent(
-        eventId,
-        actorUserId,
-        input,
-      );
-      if (!updated) {
-        throw new EventsServiceError("EVENT_NOT_FOUND", "Event was not found");
-      }
+      return await db.transaction(async (tx) => {
+        const updatePayload = Object.fromEntries(
+          Object.entries({
+            slug: input.slug,
+            name: input.name,
+            description: input.description,
+            venueName: input.venueName,
+            venueCity: input.venueCity,
+            venueAddress: input.venueAddress,
+            startsAt: input.startsAt,
+            endsAt: input.endsAt,
+            saleStartsAt: input.saleStartsAt,
+            saleEndsAt: input.saleEndsAt,
+            status: input.status,
+            coverImageUrl: input.coverImageUrl,
+            livestreamEnabled: input.livestreamEnabled,
+          }).filter(([, value]) => value !== undefined),
+        );
 
-      return updated;
+        const updated = await this.repository.updateEventByIdTx(
+          eventId,
+          {
+            ...updatePayload,
+            updatedBy: actorUserId,
+            updatedAt: new Date(),
+          },
+          tx,
+        );
+
+        if (!updated) {
+          throw new EventsServiceError(
+            "EVENT_NOT_FOUND",
+            "Event was not found",
+          );
+        }
+
+        await this.repository.synchronizeEventStatusTx(eventId, new Date(), tx);
+        const refreshed = await this.repository.getEventByIdTx(eventId, tx);
+
+        return refreshed ?? updated;
+      });
     } catch (error) {
       if (error instanceof EventsServiceError) {
         throw error;
@@ -193,21 +279,62 @@ export class EventsService implements EventsServiceContract {
     input: StockOverrideBody,
   ) {
     try {
-      const result = await this.repository.overrideSectionCapacity(
-        eventId,
-        sectionId,
-        actorUserId,
-        input,
-      );
-
-      if (!result) {
-        throw new EventsServiceError(
-          "SECTION_NOT_FOUND",
-          "Event section was not found",
+      return await db.transaction(async (tx) => {
+        const section = await this.repository.findEventSectionTx(
+          eventId,
+          sectionId,
+          tx,
         );
-      }
+        if (!section) {
+          throw new EventsServiceError(
+            "SECTION_NOT_FOUND",
+            "Event section was not found",
+          );
+        }
 
-      return result;
+        const delta = input.action === "add" ? input.quantity : -input.quantity;
+        const nextCapacity = section.capacity + delta;
+
+        if (nextCapacity < 0) {
+          throw new Error("NEGATIVE_CAPACITY");
+        }
+
+        const updatedSection =
+          await this.repository.updateEventSectionCapacityTx(
+            section.id,
+            nextCapacity,
+            tx,
+          );
+
+        if (!updatedSection) {
+          throw new Error("SECTION_UPDATE_FAILED");
+        }
+
+        const movement = await this.repository.insertStockMovementTx(
+          {
+            eventSectionId: section.id,
+            actorUserId,
+            movementType:
+              input.action === "add" ? "admin_add" : "admin_withdraw",
+            quantity: delta,
+            stockBefore: section.capacity,
+            stockAfter: nextCapacity,
+            reason: input.reason,
+          },
+          tx,
+        );
+
+        if (!movement) {
+          throw new Error("MOVEMENT_INSERT_FAILED");
+        }
+
+        await this.repository.synchronizeEventStatusTx(eventId, new Date(), tx);
+
+        return {
+          section: updatedSection,
+          movement,
+        };
+      });
     } catch (error) {
       if (error instanceof EventsServiceError) {
         throw error;
@@ -236,6 +363,30 @@ export class EventsService implements EventsServiceContract {
         "A database error occurred while reading dashboard metrics",
       );
     }
+  }
+
+  async synchronizeAutoEventStatuses(limit = 200): Promise<number> {
+    return db.transaction(async (tx) => {
+      const candidates = await this.repository.listAutoManagedEventsTx(
+        limit,
+        tx,
+      );
+      const now = new Date();
+      let updatedCount = 0;
+
+      for (const event of candidates) {
+        const result = await this.repository.synchronizeEventStatusTx(
+          event.id,
+          now,
+          tx,
+        );
+        if (result === "updated") {
+          updatedCount += 1;
+        }
+      }
+
+      return updatedCount;
+    });
   }
 }
 

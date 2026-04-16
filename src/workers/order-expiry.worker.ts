@@ -1,5 +1,5 @@
 import { redis } from "../config/redis";
-import { expireAwaitingPaymentOrders } from "../repositories/ticket-orders.repository";
+import { expireAwaitingPaymentOrders } from "../services/ticket-orders.service";
 import { logError, logInfo } from "../utils/logger";
 
 const LOCK_KEY = "lumina:worker:order-expiry:lock";

@@ -1,4 +1,4 @@
-import { synchronizeAutoEventStatuses } from "../repositories/events.repository";
+import { eventsService } from "../services/events.service";
 import { logError, logInfo } from "../utils/logger";
 
 const WORKER_INTERVAL_MS = 60_000;
@@ -19,7 +19,8 @@ async function runEventStatusTick(): Promise<void> {
   eventStatusWorkerMetrics.lastTickAt = new Date().toISOString();
 
   try {
-    const updatedCount = await synchronizeAutoEventStatuses(BATCH_SIZE);
+    const updatedCount =
+      await eventsService.synchronizeAutoEventStatuses(BATCH_SIZE);
     eventStatusWorkerMetrics.lastUpdatedCount = updatedCount;
     eventStatusWorkerMetrics.totalUpdatedEvents += updatedCount;
 

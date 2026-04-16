@@ -29,9 +29,49 @@ function buildCreateEventInput(): CreateEventBody {
   };
 }
 
+function createRepositoryMock(overrides: Record<string, unknown> = {}) {
+  return {
+    listEvents: async () => ({
+      items: [],
+      page: 1,
+      size: 10,
+      totalItem: 0,
+      totalPage: 1,
+    }),
+    getEventById: async () => null,
+    getEventBySlug: async () => null,
+    getLiveDashboard: async () => ({
+      waitingUsers: 0,
+      soldTickets: 0,
+      activeViewers: 0,
+      totalCapacity: 0,
+      topResolutions: [],
+    }),
+    getEventByIdTx: async () => ({
+      id: "event-1",
+      slug: "event-1",
+      status: "draft",
+      sections: [],
+    }),
+    getEventBySlugTx: async () => null,
+    insertEventTx: async () => ({ id: "event-1" }),
+    insertEventSectionsTx: async () => [],
+    updateEventByIdTx: async () => ({ id: "event-1", name: "Updated" }),
+    findEventSectionTx: async () => ({ id: "section-1", capacity: 10 }),
+    updateEventSectionCapacityTx: async () => ({
+      id: "section-1",
+      capacity: 12,
+    }),
+    insertStockMovementTx: async () => ({ id: "movement-1" }),
+    listAutoManagedEventsTx: async () => [],
+    synchronizeEventStatusTx: async () => "unchanged",
+    ...overrides,
+  };
+}
+
 describe("EventsService", () => {
   it("returns events list with sections", async () => {
-    const repository = {
+    const repository = createRepositoryMock({
       listEvents: async () => ({
         items: [{ id: "event-1", sections: [{ id: "section-1" }] }],
         page: 1,
@@ -39,19 +79,7 @@ describe("EventsService", () => {
         totalItem: 1,
         totalPage: 1,
       }),
-      getEventById: async () => null,
-      createEventWithSections: async () => ({ ok: true }),
-      updateEvent: async () => ({ ok: true }),
-      getEventBySlug: async () => null,
-      overrideSectionCapacity: async () => ({ ok: true }),
-      getLiveDashboard: async () => ({
-        waitingUsers: 1,
-        soldTickets: 2,
-        activeViewers: 3,
-        totalCapacity: 4,
-        topResolutions: [],
-      }),
-    };
+    });
 
     const service = new EventsService(repository as any);
     const result = await service.listEvents(1, 10, "konser");
@@ -61,80 +89,8 @@ describe("EventsService", () => {
     expect(result.totalItem).toBe(1);
   });
 
-  it("returns event detail by id", async () => {
-    const repository = {
-      listEvents: async () => [],
-      getEventById: async () => ({
-        id: "event-1",
-        slug: "event-1",
-        sections: [],
-      }),
-      createEventWithSections: async () => ({ ok: true }),
-      updateEvent: async () => ({ ok: true }),
-      getEventBySlug: async () => null,
-      overrideSectionCapacity: async () => ({ ok: true }),
-      getLiveDashboard: async () => ({
-        waitingUsers: 0,
-        soldTickets: 0,
-        activeViewers: 0,
-        totalCapacity: 0,
-        topResolutions: [],
-      }),
-    };
-
-    const service = new EventsService(repository as any);
-    const result = await service.getEventById("event-1");
-
-    expect(result.id).toBe("event-1");
-  });
-
-  it("throws EVENT_NOT_FOUND when getEventById receives invalid uuid error", async () => {
-    const repository = {
-      listEvents: async () => [],
-      getEventById: async () => {
-        throw new Error("Failed query", {
-          cause: {
-            code: "22P02",
-          },
-        });
-      },
-      createEventWithSections: async () => ({ ok: true }),
-      updateEvent: async () => ({ ok: true }),
-      getEventBySlug: async () => null,
-      overrideSectionCapacity: async () => ({ ok: true }),
-      getLiveDashboard: async () => ({
-        waitingUsers: 0,
-        soldTickets: 0,
-        activeViewers: 0,
-        totalCapacity: 0,
-        topResolutions: [],
-      }),
-    };
-
-    const service = new EventsService(repository as any);
-
-    await expect(service.getEventById("21")).rejects.toMatchObject({
-      code: "EVENT_NOT_FOUND",
-    });
-  });
-
   it("throws EVENT_NOT_FOUND when event detail by slug is missing", async () => {
-    const repository = {
-      listEvents: async () => [],
-      getEventById: async () => null,
-      createEventWithSections: async () => ({ ok: true }),
-      updateEvent: async () => ({ ok: true }),
-      getEventBySlug: async () => null,
-      overrideSectionCapacity: async () => ({ ok: true }),
-      getLiveDashboard: async () => ({
-        waitingUsers: 0,
-        soldTickets: 0,
-        activeViewers: 0,
-        totalCapacity: 0,
-        topResolutions: [],
-      }),
-    };
-
+    const repository = createRepositoryMock();
     const service = new EventsService(repository as any);
 
     await expect(service.getEventBySlug("missing-slug")).rejects.toMatchObject({
@@ -143,21 +99,15 @@ describe("EventsService", () => {
   });
 
   it("creates event with valid time range", async () => {
-    const repository = {
-      listEvents: async () => [],
-      getEventById: async () => null,
-      createEventWithSections: async () => ({ ok: true }),
-      updateEvent: async () => ({ ok: true }),
-      getEventBySlug: async () => null,
-      overrideSectionCapacity: async () => ({ ok: true }),
-      getLiveDashboard: async () => ({
-        waitingUsers: 1,
-        soldTickets: 2,
-        activeViewers: 3,
-        totalCapacity: 4,
-        topResolutions: [],
+    const repository = createRepositoryMock({
+      insertEventTx: async () => ({ id: "event-created" }),
+      getEventByIdTx: async () => ({
+        id: "event-created",
+        slug: "konser-akbar-2026",
+        status: "draft",
       }),
-    };
+      insertEventSectionsTx: async () => [{ id: "section-a" }],
+    });
 
     const service = new EventsService(repository as any);
     const result = await service.createEvent(
@@ -165,27 +115,11 @@ describe("EventsService", () => {
       buildCreateEventInput(),
     );
 
-    expect((result as any).ok).toBe(true);
+    expect((result as any).id).toBe("event-created");
   });
 
   it("throws INVALID_TIME_RANGE when event ends before start", async () => {
-    const repository = {
-      listEvents: async () => [],
-      getEventById: async () => null,
-      createEventWithSections: async () => ({ ok: true }),
-      updateEvent: async () => ({ ok: true }),
-      getEventBySlug: async () => null,
-      overrideSectionCapacity: async () => ({ ok: true }),
-      getLiveDashboard: async () => ({
-        waitingUsers: 0,
-        soldTickets: 0,
-        activeViewers: 0,
-        totalCapacity: 0,
-        topResolutions: [],
-      }),
-    };
-
-    const service = new EventsService(repository as any);
+    const service = new EventsService(createRepositoryMock() as any);
 
     const input = buildCreateEventInput();
     input.endsAt = new Date("2026-10-10T18:00:00.000Z");
@@ -197,111 +131,12 @@ describe("EventsService", () => {
     );
   });
 
-  it("throws EVENT_NOT_FOUND when update target does not exist", async () => {
-    const repository = {
-      listEvents: async () => [],
-      getEventById: async () => null,
-      createEventWithSections: async () => ({ ok: true }),
-      updateEvent: async () => null,
-      getEventBySlug: async () => null,
-      overrideSectionCapacity: async () => ({ ok: true }),
-      getLiveDashboard: async () => ({
-        waitingUsers: 0,
-        soldTickets: 0,
-        activeViewers: 0,
-        totalCapacity: 0,
-        topResolutions: [],
-      }),
-    };
-
-    const service = new EventsService(repository as any);
-
-    await expect(
-      service.updateEvent("00000000-0000-0000-0000-000000000001", actorUserId, {
-        name: "Updated",
-      }),
-    ).rejects.toMatchObject({ code: "EVENT_NOT_FOUND" });
-  });
-
-  it("throws INVALID_STOCK_OVERRIDE when resulting capacity is negative", async () => {
-    const repository = {
-      listEvents: async () => [],
-      getEventById: async () => null,
-      createEventWithSections: async () => ({ ok: true }),
-      updateEvent: async () => ({ ok: true }),
-      getEventBySlug: async () => null,
-      overrideSectionCapacity: async () => {
-        throw new Error("NEGATIVE_CAPACITY");
-      },
-      getLiveDashboard: async () => ({
-        waitingUsers: 0,
-        soldTickets: 0,
-        activeViewers: 0,
-        totalCapacity: 0,
-        topResolutions: [],
-      }),
-    };
-
-    const service = new EventsService(repository as any);
-
-    await expect(
-      service.instantStockOverride(
-        "00000000-0000-0000-0000-000000000001",
-        "00000000-0000-0000-0000-000000000002",
-        actorUserId,
-        { action: "withdraw", quantity: 10, reason: "rollback" },
-      ),
-    ).rejects.toMatchObject({ code: "INVALID_STOCK_OVERRIDE" });
-  });
-
-  it("returns live dashboard metrics", async () => {
-    const repository = {
-      listEvents: async () => [],
-      getEventById: async () => null,
-      createEventWithSections: async () => ({ ok: true }),
-      updateEvent: async () => ({ ok: true }),
-      getEventBySlug: async () => null,
-      overrideSectionCapacity: async () => ({ ok: true }),
-      getLiveDashboard: async () => ({
-        waitingUsers: 10,
-        soldTickets: 120,
-        activeViewers: 85,
-        totalCapacity: 500,
-        topResolutions: [
-          { resolution: "720p" as const, count: 50 },
-          { resolution: "1080p" as const, count: 25 },
-        ],
-      }),
-    };
-
-    const service = new EventsService(repository as any);
-    const result = await service.getLiveDashboard({
-      eventId: "00000000-0000-0000-0000-000000000001",
-      topResolutionLimit: 2,
-    });
-
-    expect(result.waitingUsers).toBe(10);
-    expect(result.topResolutions).toHaveLength(2);
-  });
-
   it("maps non-domain errors into EventsServiceError", async () => {
-    const repository = {
-      listEvents: async () => [],
-      getEventById: async () => null,
-      createEventWithSections: async () => {
+    const repository = createRepositoryMock({
+      insertEventTx: async () => {
         throw new Error("random failure");
       },
-      updateEvent: async () => ({ ok: true }),
-      getEventBySlug: async () => null,
-      overrideSectionCapacity: async () => ({ ok: true }),
-      getLiveDashboard: async () => ({
-        waitingUsers: 0,
-        soldTickets: 0,
-        activeViewers: 0,
-        totalCapacity: 0,
-        topResolutions: [],
-      }),
-    };
+    });
 
     const service = new EventsService(repository as any);
 

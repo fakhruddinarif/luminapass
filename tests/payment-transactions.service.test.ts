@@ -20,25 +20,87 @@ const webhookInput: PaymentWebhookBody = {
   signatureValid: true,
 };
 
+function createRepositoryMock(overrides: Record<string, unknown> = {}) {
+  return {
+    findOrderByIdTx: async () => ({
+      id: "order-1",
+      orderCode: "ORD-123",
+      status: "awaiting_payment",
+      totalAmount: "100000.00",
+      suppressTicketEmail: false,
+      eventId: "event-1",
+    }),
+    insertPaymentTransactionTx: async () => ({
+      id: "txn-1",
+      status: "captured",
+      provider: "mock",
+      webhookEventId: null,
+    }),
+    updateOrderAfterPaymentCreateTx: async () => ({
+      id: "order-1",
+      suppressTicketEmail: false,
+    }),
+    getPaymentAggregateByTransactionIdTx: async () => ({
+      id: "txn-1",
+      order: { id: "order-1", items: [], event: null },
+    }),
+    findTransactionByWebhookInputTx: async () => ({
+      id: "txn-1",
+      orderId: "order-1",
+      provider: "mock",
+      settledAt: null,
+      failureReason: null,
+    }),
+    findDuplicateWebhookEventTx: async () => null,
+    updatePaymentTransactionTx: async () => ({
+      id: "txn-1",
+      status: "captured",
+      provider: "mock",
+      webhookEventId: null,
+    }),
+    updateOrderAfterWebhookTx: async () => ({
+      id: "order-1",
+      suppressTicketEmail: false,
+    }),
+    getOrderItemsWithSectionTx: async () => [],
+    listPaymentTransactions: async () => ({
+      items: [],
+      page: 1,
+      size: 10,
+      totalItem: 0,
+      totalPage: 1,
+    }),
+    getPaymentTransactionById: async () => null,
+    ...overrides,
+  };
+}
+
+function buildSectionMock() {
+  return {
+    id: "section-1",
+    eventId: "event-1",
+    code: "A",
+    name: "Section A",
+    description: null,
+    price: "100000.00",
+    capacity: 10,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+}
+
 describe("PaymentTransactionsService", () => {
   it("creates payment transaction successfully", async () => {
-    const repository = {
-      createPaymentTransaction: async () => ({
-        id: "txn-1",
-        order: { id: "order-1", items: [], event: null },
-      }),
-      listPaymentTransactions: async () => ({
-        items: [],
-        page: 1,
-        size: 10,
-        totalItem: 0,
-        totalPage: 1,
-      }),
-      getPaymentTransactionById: async () => null,
-      processPaymentWebhook: async () => null,
-    };
-
-    const service = new PaymentTransactionsService(repository as any);
+    const service = new PaymentTransactionsService(
+      createRepositoryMock() as any,
+      {
+        synchronizeEventStatusTx: async () => "unchanged",
+        enqueueOutboxEventTx: async () => undefined,
+        releaseSectionCapacityTx: async () => buildSectionMock(),
+        insertStockMovementTx: async () => undefined,
+        issueTicketUnitsForPaidOrderTx: async () => 1,
+      },
+    );
     const result = await service.createPaymentTransaction(createPaymentInput);
 
     expect(result.id).toBeDefined();
@@ -46,23 +108,17 @@ describe("PaymentTransactionsService", () => {
   });
 
   it("throws webhook-transaction-not-found when webhook target missing", async () => {
-    const repository = {
-      createPaymentTransaction: async () => ({
-        id: "txn-1",
-        order: { id: "order-1", items: [], event: null },
-      }),
-      listPaymentTransactions: async () => ({
-        items: [],
-        page: 1,
-        size: 10,
-        totalItem: 0,
-        totalPage: 1,
-      }),
-      getPaymentTransactionById: async () => null,
-      processPaymentWebhook: async () => null,
-    };
+    const repository = createRepositoryMock({
+      findTransactionByWebhookInputTx: async () => null,
+    });
 
-    const service = new PaymentTransactionsService(repository as any);
+    const service = new PaymentTransactionsService(repository as any, {
+      synchronizeEventStatusTx: async () => "unchanged",
+      enqueueOutboxEventTx: async () => undefined,
+      releaseSectionCapacityTx: async () => buildSectionMock(),
+      insertStockMovementTx: async () => undefined,
+      issueTicketUnitsForPaidOrderTx: async () => 1,
+    });
 
     return expect(
       service.processPaymentWebhook(webhookInput),
@@ -72,22 +128,17 @@ describe("PaymentTransactionsService", () => {
   });
 
   it("maps order not found errors during payment creation", async () => {
-    const repository = {
-      createPaymentTransaction: async () => {
-        throw new Error("ORDER_NOT_FOUND");
-      },
-      listPaymentTransactions: async () => ({
-        items: [],
-        page: 1,
-        size: 10,
-        totalItem: 0,
-        totalPage: 1,
-      }),
-      getPaymentTransactionById: async () => null,
-      processPaymentWebhook: async () => null,
-    };
+    const repository = createRepositoryMock({
+      findOrderByIdTx: async () => null,
+    });
 
-    const service = new PaymentTransactionsService(repository as any);
+    const service = new PaymentTransactionsService(repository as any, {
+      synchronizeEventStatusTx: async () => "unchanged",
+      enqueueOutboxEventTx: async () => undefined,
+      releaseSectionCapacityTx: async () => buildSectionMock(),
+      insertStockMovementTx: async () => undefined,
+      issueTicketUnitsForPaidOrderTx: async () => 1,
+    });
 
     return expect(
       service.createPaymentTransaction(createPaymentInput),

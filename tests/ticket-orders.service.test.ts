@@ -15,27 +15,58 @@ const orderInput: CreateTicketOrderBody = {
   ],
 };
 
+function createRepositoryMock(overrides: Record<string, unknown> = {}) {
+  return {
+    findEventByIdTx: async () => ({ id: "event-1", status: "on_sale" }),
+    findEventSectionsByIdsTx: async () => [
+      {
+        id: "section-1",
+        code: "A",
+        name: "A",
+        price: "100000.00",
+      },
+    ],
+    makeOrderCode: () => "ORD-TEST-0001",
+    insertTicketOrderTx: async () => ({
+      id: "order-1",
+      orderCode: "ORD-TEST-0001",
+      eventId: "event-1",
+      userId: "user-1",
+      status: "awaiting_payment",
+    }),
+    insertTicketOrderItemsTx: async () => [{ id: "item-1" }],
+    reserveSectionCapacityTx: async () => ({ capacity: 98 }),
+    insertStockMovementTx: async () => undefined,
+    getTicketOrderByIdWithPaymentsTx: async () => ({
+      id: "order-1",
+      payments: [],
+    }),
+    listTicketOrders: async () => ({
+      items: [],
+      page: 1,
+      size: 10,
+      totalItem: 0,
+      totalPage: 1,
+    }),
+    getTicketOrderById: async () => null,
+    scanTicketUnitByCode: async () => ({
+      id: "ticket-1",
+      ticketCode: "TK-001",
+      orderId: "order-1",
+      eventId: "event-1",
+      eventSectionId: "section-1",
+      usedAt: new Date(),
+    }),
+    ...overrides,
+  };
+}
+
 describe("TicketOrdersService", () => {
   it("creates ticket order successfully", async () => {
-    const repository = {
-      createTicketOrder: async () => ({
-        id: "order-1",
-        items: [{ id: "item-1" }],
-        event: null,
-        user: null,
-        payments: [],
-      }),
-      listTicketOrders: async () => ({
-        items: [],
-        page: 1,
-        size: 10,
-        totalItem: 0,
-        totalPage: 1,
-      }),
-      getTicketOrderById: async () => null,
-    };
-
-    const service = new TicketOrdersService(repository as any);
+    const service = new TicketOrdersService(createRepositoryMock() as any, {
+      synchronizeEventStatusTx: async () => "unchanged",
+      enqueueOutboxEventTx: async () => undefined,
+    });
     const result = await service.createTicketOrder("user-1", orderInput);
 
     expect(result.id).toBeDefined();
@@ -43,23 +74,9 @@ describe("TicketOrdersService", () => {
   });
 
   it("throws ORDER_NOT_FOUND when reading missing order", async () => {
-    const repository = {
-      createTicketOrder: async () => ({
-        id: "order-1",
-        items: [],
-        event: null,
-        user: null,
-        payments: [],
-      }),
-      listTicketOrders: async () => ({
-        items: [],
-        page: 1,
-        size: 10,
-        totalItem: 0,
-        totalPage: 1,
-      }),
+    const repository = createRepositoryMock({
       getTicketOrderById: async () => null,
-    };
+    });
 
     const service = new TicketOrdersService(repository as any);
 
@@ -69,21 +86,14 @@ describe("TicketOrdersService", () => {
   });
 
   it("maps domain event-not-found errors", async () => {
-    const repository = {
-      createTicketOrder: async () => {
-        throw new Error("EVENT_NOT_FOUND");
-      },
-      listTicketOrders: async () => ({
-        items: [],
-        page: 1,
-        size: 10,
-        totalItem: 0,
-        totalPage: 1,
-      }),
-      getTicketOrderById: async () => null,
-    };
+    const repository = createRepositoryMock({
+      findEventByIdTx: async () => null,
+    });
 
-    const service = new TicketOrdersService(repository as any);
+    const service = new TicketOrdersService(repository as any, {
+      synchronizeEventStatusTx: async () => "unchanged",
+      enqueueOutboxEventTx: async () => undefined,
+    });
 
     return expect(
       service.createTicketOrder("user-1", orderInput),
@@ -93,21 +103,14 @@ describe("TicketOrdersService", () => {
   });
 
   it("maps event-not-on-sale errors", async () => {
-    const repository = {
-      createTicketOrder: async () => {
-        throw new Error("EVENT_NOT_ON_SALE");
-      },
-      listTicketOrders: async () => ({
-        items: [],
-        page: 1,
-        size: 10,
-        totalItem: 0,
-        totalPage: 1,
-      }),
-      getTicketOrderById: async () => null,
-    };
+    const repository = createRepositoryMock({
+      findEventByIdTx: async () => ({ id: "event-1", status: "draft" }),
+    });
 
-    const service = new TicketOrdersService(repository as any);
+    const service = new TicketOrdersService(repository as any, {
+      synchronizeEventStatusTx: async () => "unchanged",
+      enqueueOutboxEventTx: async () => undefined,
+    });
 
     return expect(
       service.createTicketOrder("user-1", orderInput),

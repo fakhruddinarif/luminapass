@@ -1,4 +1,4 @@
-import { and, eq, inArray, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
 import { db } from "../config/db";
 import {
@@ -8,191 +8,185 @@ import {
   ticketOrderItems,
   ticketOrders,
 } from "../entities";
-import type { TicketOrdersRepositoryContract } from "../interfaces/ticket-orders.interface";
-import { synchronizeEventStatusTx } from "./events.repository";
-import { enqueueOutboxEventTx } from "./outbox.repository";
 import { scanTicketUnitByCode } from "./ticket-units.repository";
 
-function makeOrderCode(): string {
+type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type DbExecutor = typeof db | DbTx;
+
+function useExecutor(executor?: DbExecutor): DbExecutor {
+  return executor ?? db;
+}
+
+export function makeOrderCode(): string {
   const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
   const tsPart = Date.now().toString().slice(-8);
   return `ORD-${tsPart}-${randomPart}`;
 }
 
-export const ticketOrdersRepository: TicketOrdersRepositoryContract = {
-  async createTicketOrder(actorUserId, input) {
-    return db.transaction(async (tx) => {
-      let event = await tx.query.events.findFirst({
-        where: eq(events.id, input.eventId),
-      });
+export async function findEventByIdTx(eventId: string, executor?: DbExecutor) {
+  const orm = useExecutor(executor);
+  return orm.query.events.findFirst({
+    where: eq(events.id, eventId),
+  });
+}
 
-      if (!event) {
-        throw new Error("EVENT_NOT_FOUND");
-      }
+export async function findEventSectionsByIdsTx(
+  eventId: string,
+  sectionIds: string[],
+  executor?: DbExecutor,
+) {
+  if (sectionIds.length === 0) {
+    return [] as Array<typeof eventSections.$inferSelect>;
+  }
 
-      // Sync lifecycle status before validating sale eligibility.
-      await synchronizeEventStatusTx(tx, input.eventId);
+  const orm = useExecutor(executor);
+  return orm
+    .select()
+    .from(eventSections)
+    .where(
+      and(
+        inArray(eventSections.id, sectionIds),
+        eq(eventSections.eventId, eventId),
+      ),
+    );
+}
 
-      event = await tx.query.events.findFirst({
-        where: eq(events.id, input.eventId),
-      });
+export async function insertTicketOrderTx(
+  payload: typeof ticketOrders.$inferInsert,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  const [createdOrder] = await orm
+    .insert(ticketOrders)
+    .values(payload)
+    .returning();
+  return createdOrder ?? null;
+}
 
-      if (!event) {
-        throw new Error("EVENT_NOT_FOUND");
-      }
+export async function insertTicketOrderItemsTx(
+  payload: Array<typeof ticketOrderItems.$inferInsert>,
+  executor?: DbExecutor,
+) {
+  if (payload.length === 0) {
+    return [] as Array<typeof ticketOrderItems.$inferSelect>;
+  }
 
-      if (event.status !== "on_sale") {
-        throw new Error("EVENT_NOT_ON_SALE");
-      }
+  const orm = useExecutor(executor);
+  return orm.insert(ticketOrderItems).values(payload).returning();
+}
 
-      const sectionIds = input.items.map((item) => item.eventSectionId);
-      const sections = await tx
-        .select()
-        .from(eventSections)
-        .where(
-          and(
-            inArray(eventSections.id, sectionIds),
-            eq(eventSections.eventId, input.eventId),
-          ),
-        );
+export async function reserveSectionCapacityTx(
+  sectionId: string,
+  quantity: number,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  const [updatedSection] = await orm
+    .update(eventSections)
+    .set({
+      capacity: sql`${eventSections.capacity} - ${quantity}`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(eventSections.id, sectionId),
+        gte(eventSections.capacity, quantity),
+      ),
+    )
+    .returning();
 
-      if (sections.length !== sectionIds.length) {
-        throw new Error("EVENT_SECTION_NOT_FOUND");
-      }
+  return updatedSection ?? null;
+}
 
-      const quantityBySectionId = new Map<string, number>();
-      for (const row of input.items) {
-        quantityBySectionId.set(
-          row.eventSectionId,
-          (quantityBySectionId.get(row.eventSectionId) ?? 0) + row.quantity,
-        );
-      }
+export async function releaseSectionCapacityTx(
+  sectionId: string,
+  quantity: number,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  const [updatedSection] = await orm
+    .update(eventSections)
+    .set({
+      capacity: sql`${eventSections.capacity} + ${quantity}`,
+      updatedAt: new Date(),
+    })
+    .where(eq(eventSections.id, sectionId))
+    .returning();
 
-      const orderItemPayload = sections.map((section) => {
-        const quantity = quantityBySectionId.get(section.id) ?? 0;
-        const unitPrice = Number(section.price);
-        const lineTotal = unitPrice * quantity;
+  return updatedSection ?? null;
+}
 
-        return {
-          eventSectionId: section.id,
-          sectionCode: section.code,
-          sectionName: section.name,
-          unitPrice: unitPrice.toFixed(2),
-          quantity,
-          lineTotal: lineTotal.toFixed(2),
-        };
-      });
+export async function insertStockMovementTx(
+  payload: typeof stockMovements.$inferInsert,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  await orm.insert(stockMovements).values(payload);
+}
 
-      const subtotalAmount = orderItemPayload.reduce(
-        (acc, row) => acc + Number(row.lineTotal),
-        0,
-      );
+export async function getTicketOrderByIdWithPaymentsTx(
+  orderId: string,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  return orm.query.ticketOrders.findFirst({
+    where: eq(ticketOrders.id, orderId),
+    with: {
+      payments: true,
+    },
+  });
+}
 
-      const [createdOrder] = await tx
-        .insert(ticketOrders)
-        .values({
-          orderCode: makeOrderCode(),
-          eventId: input.eventId,
-          userId: actorUserId,
-          idempotencyKey: input.idempotencyKey,
-          status: "awaiting_payment",
-          subtotalAmount: subtotalAmount.toFixed(2),
-          totalAmount: subtotalAmount.toFixed(2),
-          paymentProvider: input.paymentProvider ?? "mock",
-          expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-        })
-        .returning();
-
-      if (!createdOrder) {
-        throw new Error("ORDER_INSERT_FAILED");
-      }
-
-      const createdItems =
-        orderItemPayload.length > 0
-          ? await tx
-              .insert(ticketOrderItems)
-              .values(
-                orderItemPayload.map((row) => ({
-                  orderId: createdOrder.id,
-                  eventSectionId: row.eventSectionId,
-                  sectionCode: row.sectionCode,
-                  sectionName: row.sectionName,
-                  unitPrice: row.unitPrice,
-                  quantity: row.quantity,
-                  lineTotal: row.lineTotal,
-                })),
-              )
-              .returning()
-          : [];
-
-      // Ensure expected relational shape is available before further stock handling.
-      if (createdItems.length !== orderItemPayload.length) {
-        throw new Error("ORDER_ITEMS_INSERT_FAILED");
-      }
-
-      for (const row of orderItemPayload) {
-        const [updatedSection] = await tx
-          .update(eventSections)
-          .set({
-            capacity: sql`${eventSections.capacity} - ${row.quantity}`,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(eventSections.id, row.eventSectionId),
-              gte(eventSections.capacity, row.quantity),
-            ),
-          )
-          .returning();
-
-        if (!updatedSection) {
-          throw new Error("INSUFFICIENT_STOCK");
-        }
-
-        await tx.insert(stockMovements).values({
-          eventSectionId: row.eventSectionId,
-          orderId: createdOrder.id,
-          actorUserId,
-          movementType: "reserve",
-          quantity: -row.quantity,
-          stockBefore: updatedSection.capacity + row.quantity,
-          stockAfter: updatedSection.capacity,
-          reason: "Ticket reserved while order is awaiting payment",
-        });
-      }
-
-      await synchronizeEventStatusTx(tx, input.eventId);
-
-      await enqueueOutboxEventTx(tx, {
-        aggregateType: "ticket_order",
-        aggregateId: createdOrder.id,
-        eventType: "order.created",
-        routingKey: "order.created",
-        payload: {
-          orderId: createdOrder.id,
-          orderCode: createdOrder.orderCode,
-          eventId: createdOrder.eventId,
-          userId: createdOrder.userId,
-          status: createdOrder.status,
-        },
-      });
-
-      const createdOrderWithPayments = await tx.query.ticketOrders.findFirst({
-        where: eq(ticketOrders.id, createdOrder.id),
+export async function findExpiredAwaitingPaymentOrdersTx(
+  limit = 100,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  return orm.query.ticketOrders.findMany({
+    where: and(
+      inArray(ticketOrders.status, ["awaiting_payment", "reserved"]),
+      lte(ticketOrders.expiresAt, new Date()),
+    ),
+    with: {
+      items: {
         with: {
-          payments: true,
+          eventSection: true,
         },
-      });
+      },
+    },
+    limit,
+  });
+}
 
-      if (!createdOrderWithPayments) {
-        throw new Error("ORDER_NOT_FOUND");
-      }
+export async function updateTicketOrderStatusTx(
+  orderId: string,
+  payload: Partial<typeof ticketOrders.$inferInsert>,
+  executor?: DbExecutor,
+) {
+  const orm = useExecutor(executor);
+  const [updated] = await orm
+    .update(ticketOrders)
+    .set(payload)
+    .where(eq(ticketOrders.id, orderId))
+    .returning();
 
-      return createdOrderWithPayments;
-    });
-  },
+  return updated ?? null;
+}
 
-  async getTicketOrderById(orderId) {
+export const ticketOrdersRepository = {
+  makeOrderCode,
+  findEventByIdTx,
+  findEventSectionsByIdsTx,
+  insertTicketOrderTx,
+  insertTicketOrderItemsTx,
+  reserveSectionCapacityTx,
+  releaseSectionCapacityTx,
+  insertStockMovementTx,
+  getTicketOrderByIdWithPaymentsTx,
+  findExpiredAwaitingPaymentOrdersTx,
+  updateTicketOrderStatusTx,
+
+  async getTicketOrderById(orderId: string) {
     const order = await db.query.ticketOrders.findFirst({
       where: eq(ticketOrders.id, orderId),
       with: {
@@ -207,7 +201,7 @@ export const ticketOrdersRepository: TicketOrdersRepositoryContract = {
     return order;
   },
 
-  async listTicketOrders(page, size, actorUserId) {
+  async listTicketOrders(page: number, size: number, actorUserId?: string) {
     const pageQuery = Math.max(1, page);
     const sizeQuery = Math.max(1, Math.min(100, size));
     const offset = (pageQuery - 1) * sizeQuery;
@@ -247,81 +241,7 @@ export const ticketOrdersRepository: TicketOrdersRepositoryContract = {
     };
   },
 
-  async scanTicketUnitByCode(ticketCode) {
+  async scanTicketUnitByCode(ticketCode: string) {
     return scanTicketUnitByCode(ticketCode);
   },
 };
-
-export async function expireAwaitingPaymentOrders(
-  limit = 100,
-): Promise<number> {
-  return db.transaction(async (tx) => {
-    const expiredOrders = await tx.query.ticketOrders.findMany({
-      where: and(
-        inArray(ticketOrders.status, ["awaiting_payment", "reserved"]),
-        lte(ticketOrders.expiresAt, new Date()),
-      ),
-      with: {
-        items: {
-          with: {
-            eventSection: true,
-          },
-        },
-      },
-      limit,
-    });
-
-    let processed = 0;
-    const impactedEventIds = new Set<string>();
-
-    for (const order of expiredOrders) {
-      for (const item of order.items) {
-        if (!item.eventSection) {
-          continue;
-        }
-
-        impactedEventIds.add(item.eventSection.eventId);
-
-        const [updatedSection] = await tx
-          .update(eventSections)
-          .set({
-            capacity: sql`${eventSections.capacity} + ${item.quantity}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(eventSections.id, item.eventSection.id))
-          .returning();
-
-        if (!updatedSection) {
-          continue;
-        }
-
-        await tx.insert(stockMovements).values({
-          eventSectionId: item.eventSection.id,
-          orderId: order.id,
-          movementType: "release",
-          quantity: item.quantity,
-          stockBefore: updatedSection.capacity - item.quantity,
-          stockAfter: updatedSection.capacity,
-          reason: "Order expired, reserved stock released",
-        });
-      }
-
-      await tx
-        .update(ticketOrders)
-        .set({
-          status: "expired",
-          failedReason: "Payment window expired",
-          updatedAt: new Date(),
-        })
-        .where(eq(ticketOrders.id, order.id));
-
-      processed += 1;
-    }
-
-    for (const eventId of impactedEventIds) {
-      await synchronizeEventStatusTx(tx, eventId);
-    }
-
-    return processed;
-  });
-}
