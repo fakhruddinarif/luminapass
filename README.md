@@ -62,6 +62,20 @@ Optional load test via Docker profile:
 docker compose --profile loadtest run --rm k6
 ```
 
+Additional variables for ticket-order race simulation:
+
+- `LOADTEST_AUTH_TOKEN`: auth cookie token value (`AUTH-TOKEN`) for protected endpoints.
+- `LOADTEST_RACE_EVENT_ID`: target event ID for race test.
+- `LOADTEST_RACE_SECTION_ID`: target section ID for race test.
+- `LOADTEST_RACE_QUANTITY`: quantity requested per order (default `1`).
+- `LOADTEST_RACE_VUS`: parallel VUs for race scenario (default `500`).
+- `LOADTEST_RACE_DURATION`: race scenario duration (default `60s`).
+- `LOADTEST_ENABLE_PAYMENT`: if `true`, each successful race order attempts `POST /api/payment-transactions`.
+
+Jika env race belum lengkap, k6 akan menampilkan warning sekali dan skenario race di-skip (tidak silent skip).
+
+Load-test payment create requests automatically send `simulatorCode=k6-success` so paid orders from load traffic suppress ticket email dispatch.
+
 Load test target behavior:
 
 - Default `BASE_URL` points to host app: `http://host.docker.internal:3000`.

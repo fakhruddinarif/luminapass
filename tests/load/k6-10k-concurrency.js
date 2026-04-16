@@ -5,9 +5,55 @@ const baseUrl = __ENV.BASE_URL || "http://localhost:3000";
 const provider = __ENV.WEBHOOK_PROVIDER || "mock";
 const providerOrderId = __ENV.WEBHOOK_PROVIDER_ORDER_ID || "ORD-LOAD-TEST";
 const externalTxnId = __ENV.WEBHOOK_EXTERNAL_TXN_ID || "MOCK-ORD-LOAD-TEST";
+const authToken = __ENV.LOADTEST_AUTH_TOKEN || "";
+const raceEventId = __ENV.LOADTEST_RACE_EVENT_ID || "";
+const raceSectionId = __ENV.LOADTEST_RACE_SECTION_ID || "";
+const racePaymentProvider = __ENV.LOADTEST_RACE_PAYMENT_PROVIDER || "mock";
+const raceOrderQuantity = Number(__ENV.LOADTEST_RACE_QUANTITY || "1");
+const enableRacePayment =
+  String(__ENV.LOADTEST_ENABLE_PAYMENT || "true").toLowerCase() !== "false";
+let raceEnvWarningPrinted = false;
+
+function getMissingRaceEnvKeys() {
+  const missing = [];
+
+  if (!authToken) {
+    missing.push("LOADTEST_AUTH_TOKEN");
+  }
+
+  if (!raceEventId) {
+    missing.push("LOADTEST_RACE_EVENT_ID");
+  }
+
+  if (!raceSectionId) {
+    missing.push("LOADTEST_RACE_SECTION_ID");
+  }
+
+  return missing;
+}
+
+function warnRaceEnvMissingOnce() {
+  if (raceEnvWarningPrinted) {
+    return;
+  }
+
+  const missingKeys = getMissingRaceEnvKeys();
+  if (missingKeys.length === 0) {
+    return;
+  }
+
+  raceEnvWarningPrinted = true;
+  console.warn(
+    `[k6] ticket_order_race_traffic skipped because required env is missing: ${missingKeys.join(", ")}`,
+  );
+}
+
+export function setup() {
+  warnRaceEnvMissingOnce();
+}
 
 export const options = {
-  discardResponseBodies: true,
+  discardResponseBodies: false,
   scenarios: {
     health_traffic: {
       executor: "ramping-vus",
@@ -27,6 +73,13 @@ export const options = {
       duration: "90s",
       exec: "webhookScenario",
       startTime: "20s",
+    },
+    ticket_order_race_traffic: {
+      executor: "constant-vus",
+      vus: Number(__ENV.LOADTEST_RACE_VUS || 500),
+      duration: __ENV.LOADTEST_RACE_DURATION || "60s",
+      exec: "ticketOrderRaceScenario",
+      startTime: "10s",
     },
   },
   thresholds: {
@@ -78,5 +131,97 @@ export function webhookScenario() {
   check(response, {
     "webhook accepted": (r) => r.status === 200 || r.status === 404,
   });
+  sleep(0.05);
+}
+
+function buildAuthHeaders() {
+  if (!authToken) {
+    return {
+      "Content-Type": "application/json",
+    };
+  }
+
+  return {
+    "Content-Type": "application/json",
+    Cookie: `AUTH-TOKEN=${encodeURIComponent(authToken)}`,
+  };
+}
+
+export function ticketOrderRaceScenario() {
+  if (getMissingRaceEnvKeys().length > 0) {
+    warnRaceEnvMissingOnce();
+    sleep(0.2);
+    return;
+  }
+
+  const idempotencyKey = `k6-race-order-${__VU}-${__ITER}-${Date.now()}`;
+  const createOrderPayload = JSON.stringify({
+    eventId: raceEventId,
+    idempotencyKey,
+    items: [
+      {
+        eventSectionId: raceSectionId,
+        quantity: raceOrderQuantity,
+      },
+    ],
+    paymentProvider: racePaymentProvider,
+  });
+
+  const orderResponse = http.post(
+    `${baseUrl}/api/ticket-orders`,
+    createOrderPayload,
+    {
+      headers: buildAuthHeaders(),
+    },
+  );
+
+  check(orderResponse, {
+    "race order response accepted": (r) =>
+      r.status === 201 ||
+      r.status === 409 ||
+      r.status === 404 ||
+      r.status === 422,
+  });
+
+  if (!enableRacePayment || orderResponse.status !== 201) {
+    sleep(0.05);
+    return;
+  }
+
+  let orderId;
+  try {
+    const orderJson = orderResponse.json();
+    orderId = orderJson?.data?.id;
+  } catch {
+    sleep(0.05);
+    return;
+  }
+
+  if (!orderId) {
+    sleep(0.05);
+    return;
+  }
+
+  const paymentPayload = JSON.stringify({
+    orderId,
+    idempotencyKey: `k6-race-payment-${__VU}-${__ITER}-${Date.now()}`,
+    provider: racePaymentProvider,
+    // Mark load-test payment creation so backend suppresses ticket email side effects.
+    simulatorCode: "k6-success",
+  });
+
+  const paymentResponse = http.post(
+    `${baseUrl}/api/payment-transactions`,
+    paymentPayload,
+    {
+      headers: buildAuthHeaders(),
+    },
+  );
+
+  check(paymentResponse, {
+    "race payment create accepted": (r) =>
+      r.status === 201 || r.status === 404 || r.status === 409,
+  });
+
   sleep(0.05);
 }

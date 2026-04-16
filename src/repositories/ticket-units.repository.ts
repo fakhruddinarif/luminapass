@@ -156,29 +156,31 @@ export async function markTicketEmailSent(
 
   const now = new Date();
 
-  await db
-    .update(ticketUnits)
-    .set({
-      emailedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(ticketUnits.orderId, orderId),
-        inArray(ticketUnits.id, ticketUnitIds),
-      ),
-    );
+  await db.transaction(async (tx) => {
+    await tx
+      .update(ticketUnits)
+      .set({
+        emailedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(ticketUnits.orderId, orderId),
+          inArray(ticketUnits.id, ticketUnitIds),
+        ),
+      );
 
-  await db
-    .update(ticketOrders)
-    .set({
-      ticketEmailSentAt: now,
-      ticketEmailRetryCount: 0,
-      ticketEmailNextRetryAt: null,
-      ticketEmailLastError: null,
-      updatedAt: now,
-    })
-    .where(eq(ticketOrders.id, orderId));
+    await tx
+      .update(ticketOrders)
+      .set({
+        ticketEmailSentAt: now,
+        ticketEmailRetryCount: 0,
+        ticketEmailNextRetryAt: null,
+        ticketEmailLastError: null,
+        updatedAt: now,
+      })
+      .where(eq(ticketOrders.id, orderId));
+  });
 }
 
 export async function markTicketEmailFailed(
@@ -186,40 +188,42 @@ export async function markTicketEmailFailed(
   reason: string,
   retryable: boolean,
 ): Promise<void> {
-  const [order] = await db
-    .select({
-      retryCount: ticketOrders.ticketEmailRetryCount,
-    })
-    .from(ticketOrders)
-    .where(eq(ticketOrders.id, orderId));
+  await db.transaction(async (tx) => {
+    const [order] = await tx
+      .select({
+        retryCount: ticketOrders.ticketEmailRetryCount,
+      })
+      .from(ticketOrders)
+      .where(eq(ticketOrders.id, orderId));
 
-  if (!order) {
-    return;
-  }
+    if (!order) {
+      return;
+    }
 
-  const maxRetryAttempts = env.EMAIL_RETRY_MAX_ATTEMPTS;
-  const nextRetryCount = Math.min(order.retryCount + 1, maxRetryAttempts);
+    const maxRetryAttempts = env.EMAIL_RETRY_MAX_ATTEMPTS;
+    const nextRetryCount = Math.min(order.retryCount + 1, maxRetryAttempts);
 
-  let nextRetryAt: Date | null = null;
+    let nextRetryAt: Date | null = null;
 
-  if (retryable && nextRetryCount < maxRetryAttempts) {
-    const backoffSeconds = Math.min(
-      env.EMAIL_RETRY_BASE_SECONDS * 2 ** Math.max(0, nextRetryCount - 1),
-      60 * 60,
-    );
+    if (retryable && nextRetryCount < maxRetryAttempts) {
+      const backoffSeconds = Math.min(
+        env.EMAIL_RETRY_BASE_SECONDS * 2 ** Math.max(0, nextRetryCount - 1),
+        60 * 60,
+      );
 
-    nextRetryAt = new Date(Date.now() + backoffSeconds * 1000);
-  }
+      nextRetryAt = new Date(Date.now() + backoffSeconds * 1000);
+    }
 
-  await db
-    .update(ticketOrders)
-    .set({
-      ticketEmailRetryCount: retryable ? nextRetryCount : maxRetryAttempts,
-      ticketEmailNextRetryAt: nextRetryAt,
-      ticketEmailLastError: reason,
-      updatedAt: new Date(),
-    })
-    .where(eq(ticketOrders.id, orderId));
+    await tx
+      .update(ticketOrders)
+      .set({
+        ticketEmailRetryCount: retryable ? nextRetryCount : maxRetryAttempts,
+        ticketEmailNextRetryAt: nextRetryAt,
+        ticketEmailLastError: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(ticketOrders.id, orderId));
+  });
 }
 
 export async function scanTicketUnitByCode(ticketCode: string) {

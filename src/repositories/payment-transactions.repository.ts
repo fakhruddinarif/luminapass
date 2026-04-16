@@ -28,6 +28,13 @@ function isLoadTestWebhookInput(input: PaymentWebhookBody): boolean {
   return typeof source === "string" && source.toLowerCase() === "k6";
 }
 
+function isLoadTestCreatePaymentInput(simulatorCode?: string): boolean {
+  return (
+    typeof simulatorCode === "string" &&
+    simulatorCode.toLowerCase().includes("k6")
+  );
+}
+
 function resolveMockPaymentResult(simulatorCode?: string): {
   status: "captured" | "failed";
   failureReason: string | null;
@@ -287,6 +294,9 @@ export const paymentTransactionsRepository: PaymentTransactionsRepositoryContrac
 
         const simulated = resolveMockPaymentResult(input.simulatorCode);
         const nextOrderStatus = mapPaymentStatusToOrderStatus(simulated.status);
+        const suppressTicketEmail =
+          order.suppressTicketEmail ||
+          isLoadTestCreatePaymentInput(input.simulatorCode);
         const now = new Date();
 
         const transactionInsertPayload: typeof paymentTransactions.$inferInsert =
@@ -338,7 +348,7 @@ export const paymentTransactionsRepository: PaymentTransactionsRepositoryContrac
             paymentReference: createdTxn.externalTxnId,
             paidAt: nextOrderStatus === "paid" ? now : null,
             failedReason: simulated.failureReason,
-            suppressTicketEmail: order.suppressTicketEmail ?? false,
+            suppressTicketEmail,
             updatedAt: now,
           })
           .where(
